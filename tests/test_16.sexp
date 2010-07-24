@@ -1,0 +1,2 @@
+
+(:BODY (:P "* A paragraph that starts with a *") (:BLOCKQUOTE (:P "# A blockquote that starts with a #")) (:P "Another paragraph with some " (:I "italic } including a brace") " boo.") (:BLOCKQUOTE (:P "- A blockquote that starts with a -")) (:P "Done.")) 
