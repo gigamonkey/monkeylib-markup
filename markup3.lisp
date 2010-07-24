@@ -26,8 +26,6 @@
 
 (defun indentation-p (x) (typep x 'indentation))
 
-(defgeneric to-sexp (thing))
-
 (defmethod print-object ((object element) stream)
   (print-unreadable-object (object stream)
     (format stream "tag: ~a" (tag object))))
@@ -35,6 +33,10 @@
 (defmethod print-object ((object indentation) stream)
   (print-unreadable-object (object stream :type t :identity nil)
     (format stream "~a" (spaces object))))
+
+(defgeneric to-sexp (thing))
+
+(defmethod to-sexp ((string string)) string)
 
 (defmethod to-sexp ((element element))
   `(,(tag element) ,@(loop with last = (current-child-cons element)
@@ -45,7 +47,6 @@
                                      (string-right-trim " " child)
                                      child)))))
 
-(defmethod to-sexp ((string string)) string)
 
 (defun make-element (parent tag &rest format-args)
   (let ((e (make-instance 'element :tag (intern (string-upcase (apply #'format nil tag format-args)) :keyword))))
@@ -64,8 +65,7 @@
   (car (current-child-cons element)))
 
 (defmethod initialize-instance :after ((parser parser) &key &allow-other-keys)
-  (push-binding parser t
-                (lambda (parser tok) (error "No binding for ~a in ~a" tok (bindings parser)))))
+  (push-binding parser t (lambda (tok) (error "No binding for ~a in ~a" tok (bindings parser)))))
 
 (defun open-frame (parser)
   (let ((marker (gensym "FRAME-")))
@@ -118,7 +118,7 @@
         (to-sexp (close-element parser body))))))
 
 (defun process-token (parser token)
-  (funcall (find-binding parser token) parser token))
+  (funcall (find-binding parser token) token))
 
 (defun make-indentation-> (amount)
   (lambda (token)
@@ -126,47 +126,47 @@
 
 (defun install-document-bindings (parser)
   (let ((frame-marker (open-frame parser)))
-    (push-binding parser :eof (lambda (parser token) 
+    (push-binding parser :eof (lambda (token) 
                                 (declare (ignore token))
                                 (pop-bindings parser frame-marker)))
-    (push-binding parser :blank #'ignore-token)
+    (push-binding parser :blank (lambda (token) (ignore-token token)))
     (push-binding parser 
                   (lambda (token)
                     (and (indentation-p token) (= (spaces token) 2)))
-                  (lambda (parser token)
+                  (lambda (token)
                     (open-subdocument parser (spaces token) "blockquote")))
 
     (push-binding parser 
                   (lambda (token)
                     (and (indentation-p token) (= (spaces token) 4)))
-                  (lambda (parser token)
+                  (lambda (token)
                     (open-verbatim parser (spaces token) "pre")))
 
     (push-binding parser #'characterp 
-                  (lambda (parser token)
+                  (lambda (token)
                     (open-paragraph parser "p")
                     (process-token parser token)))
-    (push-binding parser #\* (make-header-handler))))
+    (push-binding parser #\* (make-header-handler parser))))
 
 (defun open-paragraph (parser tag)
   (let ((frame-marker (open-frame parser))
         (paragraph (open-element parser tag)))
     (push-binding parser :blank 
-                  (lambda (parser token)
+                  (lambda (token)
                     (declare (ignore token))
                     (pop-bindings parser frame-marker)
                     (close-element parser paragraph)))
-    (push-binding parser #'characterp #'add-text)
-    (push-binding parser #\Newline (lambda (parser token)
+    (push-binding parser #'characterp (lambda (token) (add-text parser token)))
+    (push-binding parser #\Newline (lambda (token)
                                      (declare (ignore token))
                                      (add-text parser #\Space)))
-    (push-binding parser #\\ #'slash-handler)))
+    (push-binding parser #\\ (make-slash-handler parser))))
 
 (defun open-block (parser tag)
   (let ((frame-marker (open-frame parser))
         (element (open-element parser tag)))
     (push-binding parser #\}
-                  (lambda (parser token)
+                  (lambda (token)
                     (declare (ignore token))
                     (pop-bindings parser frame-marker)
                     (close-element parser element)))))
@@ -180,7 +180,7 @@
     (push-binding parser 
                   (lambda (token)
                     (and (indentation-p token) (= (spaces token) 0)))
-                  (lambda (parser token)
+                  (lambda (token)
                     (declare (ignore token))
                     (pop-bindings parser frame-marker)
                     (close-element parser subdocument)))))
@@ -195,14 +195,13 @@
     (push-binding parser 
                   (lambda (token)
                     (and (indentation-p token) (= (spaces token) indentation)))
-                  (lambda (parser token)
-                    (declare (ignore parser))
+                  (lambda (token)
                     (setf current-indentation (spaces token))))
 
     (push-binding parser 
                   (lambda (token)
                     (and (indentation-p token) (< (spaces token) indentation)))
-                  (lambda (parser token)
+                  (lambda (token)
                     (declare (ignore token))
                     (pop-bindings parser frame-marker)
                     (close-element parser verbatim)))
@@ -210,51 +209,53 @@
     (push-binding parser 
                   (lambda (token)
                     (and (indentation-p token) (> (spaces token) indentation)))
-                  (lambda (parser token)
+                  (lambda (token)
                     (setf current-indentation (spaces token))
                     (loop repeat (- (spaces token) indentation) do (add-text parser #\Space))))
 
-    (push-binding parser #'characterp #'add-text)
-    (push-binding parser :blank (lambda (parser token)
+    (push-binding parser #'characterp (lambda (token) (add-text parser token)))
+    (push-binding parser :blank (lambda (token)
                                   (declare (ignore token))
                                   (add-text parser #\Newline)
                                   (add-text parser #\Newline)))
 
-    (push-binding parser #\Newline (lambda (parser token)
+    (push-binding parser #\Newline (lambda (token)
+                                     (declare (ignore token))
                                      (add-text parser #\Newline)
                                      (loop repeat (- current-indentation indentation) do (add-text parser #\Space))))
     ))
     
 
-(defun make-header-handler ()
+(defun make-header-handler (parser)
   (let ((level 1))
-    (lambda (parser token)
+    (lambda (token)
       (declare (ignore token))
       (let ((frame-marker (open-frame parser)))
-        (push-binding parser t #'illegal-token)
-        (push-binding parser #\* (lambda (parser token) (declare (ignore parser token)) (incf level)))
-        (push-binding parser #\Space (lambda (parser token)
+        (push-binding parser t (lambda (token) (illegal-token token)))
+        (push-binding parser #\* (lambda (token) (declare (ignore token)) (incf level)))
+        (push-binding parser #\Space (lambda (token)
                                        (declare (ignore token))
                                        (pop-bindings parser frame-marker)
                                        (open-paragraph parser (format nil "h~d" level))))))))
 
-(defun slash-handler (parser token)
-  (declare (ignore token))
-  (let ((frame-marker (open-frame parser)))
-    (push-binding parser "\\{}*[]" (lambda (parser token)
-                                     (pop-bindings parser frame-marker)
-                                     (add-text parser token)))
-    (push-binding parser #'tag-name-char-p 
-                  (let ((name (make-text-buffer)))
-                    (lambda (parser token)
-                      (push-binding parser #\{
-                                    (lambda (parser token)
-                                      (declare (ignore token))
-                                      (unless (plusp (length name))
-                                        (error "Empty names not allowed."))
-                                      (pop-bindings parser frame-marker)
-                                      (open-block parser name)))
-                      (append-text name token))))))
+(defun make-slash-handler (parser)
+  (lambda (token)
+    (declare (ignore token))
+    (let ((frame-marker (open-frame parser)))
+      (push-binding parser "\\{}*[]" (lambda (token)
+                                       (pop-bindings parser frame-marker)
+                                       (add-text parser token)))
+      (push-binding parser #'tag-name-char-p 
+                    (let ((name (make-text-buffer)))
+                      (lambda (token)
+                        (push-binding parser #\{
+                                      (lambda (token)
+                                        (declare (ignore token))
+                                        (unless (plusp (length name))
+                                          (error "Empty names not allowed."))
+                                        (pop-bindings parser frame-marker)
+                                        (open-block parser name)))
+                        (append-text name token)))))))
       
 
 
@@ -278,13 +279,9 @@
     (string (loop for c across text do (vector-push-extend c string)))
     (t (format t "~&Appending non text text: ~a" text))))
 
-(defun ignore-token (parser c)
-  (declare (ignore parser))
-  (format t "~&Ignoring ~a" c))
+(defun ignore-token (token) (format t "~&Ignoring ~a" token))
 
-(defun illegal-token (parser token)
-  (declare (ignore parser))
-  (error "Illegal token ~a" token))
+(defun illegal-token (token) (error "Illegal token ~a" token))
 
 
 
@@ -365,14 +362,6 @@
     (make-trailing-space-translator
      (make-blank-translator
       (make-indentation-translator end))))))
-
-(defun show-string (string)
-  (let ((output ()))
-    (let ((translator (make-basic-translator-chain (lambda (char) (push char output)))))
-      (loop for c across string do (funcall translator c))
-      (funcall translator :eof)
-      (nreverse output))))
-
 
 ;;
 ;; Unit tests
