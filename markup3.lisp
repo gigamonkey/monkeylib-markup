@@ -8,9 +8,12 @@
 
 (defparameter *spaces-per-tab* 8)
 
+(defparameter *blank* (format nil "~c~c" #\Newline #\Newline))
+
 (defclass parser ()
   ((bindings :initform () :accessor bindings)
    (elements :initform () :accessor elements)
+   (current-indentation :initform 0 :accessor current-indentation)
    (subdocument-tags :initform '(:note :comment) :accessor subdocument-tags)))
 
 (defclass element ()
@@ -120,26 +123,31 @@
 (defun process-token (parser token)
   (funcall (find-binding parser token) token))
 
-(defun make-indentation-> (amount)
-  (lambda (token)
-    (and (indentation-p token) (> (spaces token) amount))))
-
 (defun install-document-bindings (parser)
   (let ((frame-marker (open-frame parser)))
     (push-binding parser :eof (lambda (token) 
                                 (declare (ignore token))
                                 (pop-bindings parser frame-marker)))
     (push-binding parser :blank (lambda (token) (ignore-token token)))
+
     (push-binding parser 
                   (lambda (token)
-                    (and (indentation-p token) (= (spaces token) 2)))
+                    (and (indentation-p token) (= (spaces token) (current-indentation parser))))
                   (lambda (token)
+                    (setf (current-indentation parser) (spaces token))))
+
+    (push-binding parser 
+                  (lambda (token)
+                    (and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 2))))
+                  (lambda (token)
+                    (setf (current-indentation parser) (spaces token))
                     (open-subdocument parser (spaces token) "blockquote")))
 
     (push-binding parser 
                   (lambda (token)
-                    (and (indentation-p token) (= (spaces token) 4)))
+                    (and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 4))))
                   (lambda (token)
+                    (setf (current-indentation parser) (spaces token))
                     (open-verbatim parser (spaces token) "pre")))
 
     (push-binding parser #'characterp 
@@ -172,59 +180,61 @@
                     (close-element parser element)))))
 
 (defun open-subdocument (parser indentation tag)
-  ;; Should really compare indentation to our own indentation and then
-  ;; pass along the indentation token if it is sufficiently low.
-  (declare (ignore indentation))
   (let ((frame-marker (open-frame parser))
         (subdocument (open-element parser tag)))
-    (push-binding parser 
-                  (lambda (token)
-                    (and (indentation-p token) (= (spaces token) 0)))
-                  (lambda (token)
-                    (declare (ignore token))
-                    (pop-bindings parser frame-marker)
-                    (close-element parser subdocument)))))
-
-(defun open-verbatim (parser indentation tag)
-  ;; Should really compare indentation to our own indentation and then
-  ;; pass along the indentation token if it is sufficiently low.
-  (let ((frame-marker (open-frame parser))
-        (verbatim (open-element parser tag))
-        (current-indentation indentation))
-
-    (push-binding parser 
-                  (lambda (token)
-                    (and (indentation-p token) (= (spaces token) indentation)))
-                  (lambda (token)
-                    (setf current-indentation (spaces token))))
 
     (push-binding parser 
                   (lambda (token)
                     (and (indentation-p token) (< (spaces token) indentation)))
                   (lambda (token)
-                    (declare (ignore token))
+                    (setf (current-indentation parser) (spaces token))
                     (pop-bindings parser frame-marker)
-                    (close-element parser verbatim)))
+                    (close-element parser subdocument)
+                    (process-token parser token)))))
+
+(defun open-verbatim (parser indentation tag)
+  (let ((frame-marker (open-frame parser))
+        (verbatim (open-element parser tag))
+        (current-indentation indentation)
+        (blanks 0)
+        (bol nil))
 
     (push-binding parser 
                   (lambda (token)
-                    (and (indentation-p token) (> (spaces token) indentation)))
+                    (and (indentation-p token) (< (spaces token) indentation)))
                   (lambda (token)
-                    (setf current-indentation (spaces token))
-                    (loop repeat (- (spaces token) indentation) do (add-text parser #\Space))))
+                    (setf (current-indentation parser) (spaces token))
+                    (pop-bindings parser frame-marker)
+                    (close-element parser verbatim)
+                    (process-token parser token)))
 
-    (push-binding parser #'characterp (lambda (token) (add-text parser token)))
-    (push-binding parser :blank (lambda (token)
-                                  (declare (ignore token))
-                                  (add-text parser #\Newline)
-                                  (add-text parser #\Newline)))
+    (push-binding parser 
+                  (lambda (token)
+                    (and (indentation-p token) (>= (spaces token) indentation)))
+                  (lambda (token)
+                    ;(setf (current-indentation parser) (spaces token))
+                    (setf current-indentation (- (spaces token) indentation))))
 
-    (push-binding parser #\Newline (lambda (token)
-                                     (declare (ignore token))
-                                     (add-text parser #\Newline)
-                                     (loop repeat (- current-indentation indentation) do (add-text parser #\Space))))
-    ))
+    (push-binding parser #'characterp 
+                  (lambda (token)
+                    (when bol
+                      (loop repeat blanks do (add-text parser *blank*))
+                      (setf blanks 0)
+                      (loop repeat current-indentation do (add-text parser #\Space))
+                      (setf bol nil))
+                    (add-text parser token)))
     
+    (push-binding parser :blank 
+                  (lambda (token)
+                    (declare (ignore token))
+                    (setf bol t)
+                    (incf blanks)))
+    
+    (push-binding parser #\Newline 
+                  (lambda (token)
+                    (add-text parser token)
+                    (setf bol t)))))
+
 
 (defun make-header-handler (parser)
   (let ((level 1))
