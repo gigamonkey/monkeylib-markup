@@ -40,9 +40,9 @@
   (with-gensyms (frame-marker)
     `(let ((,frame-marker (open-frame ,parser)))
        (flet ((pop-frame ()
-                (pop-bindings ,parser ,frame-marker))
+                (close-frame ,parser ,frame-marker))
               (pop-frame-and-element (element)
-                (pop-bindings ,parser ,frame-marker)
+                (close-frame ,parser ,frame-marker)
                 (close-element ,parser element)))
          (declare (ignorable (function pop-frame) (function pop-frame-and-element)))
          ,@(loop for (key . body) in (reverse bindings) collect
@@ -71,10 +71,6 @@
                                      child)))))
 
 
-(defun make-element (parent tag &rest format-args)
-  (let ((e (make-instance 'element :tag (intern (string-upcase (apply #'format nil tag format-args)) :keyword))))
-    (when parent (append-child parent e))
-    e))
 
 (defun append-child (element child)
   (let ((cons (current-child-cons element))
@@ -99,7 +95,7 @@
   (with-slots (bindings) parser
     (setf bindings (acons key fn bindings))))
 
-(defun pop-bindings (parser frame-marker)
+(defun close-frame (parser frame-marker)
   (with-slots (bindings) parser
     (setf bindings (cdr (member frame-marker bindings :key #'car)))))
 
@@ -117,67 +113,67 @@
     (string (find token key))
     (symbol (eql token key))))
 
-(defun open-element (parser tag &rest format-args)
+(defun open-element (parser tag)
   (with-slots (elements) parser
-    (first (push (apply #'make-element (first elements) tag format-args) elements))))
+    (let ((parent (first elements))
+          (element (make-instance 'element :tag (intern (string-upcase tag) :keyword))))
+      (when parent (append-child parent element))
+      (push element elements)
+      element)))
 
 (defun close-element (parser element)
   (with-slots (elements) parser
-    #+(or)(unless (eql (first elements) element)
-            (error "~a is not the current element (~a)." element elements))
-    (setf elements (cdr (member element elements)))
+    (let ((tail (member element elements)))
+      (unless tail (error "~a is not in elements (~a)." element elements))
+      (setf elements (cdr tail)))
     element))
-         
 
 (defun parse-file (file)
-  (let ((parser (make-instance 'parser)))
-    (let ((body (open-element parser "body")))
-      (install-document-bindings parser)
-      (let ((translator (make-basic-translator-chain (lambda (tok) (process-token parser tok)))))
-        (with-open-file (in file)
-          (loop for c = (read-char in nil nil)
-             while c do (funcall translator c)))
-        (funcall translator #\Newline)
-        (funcall translator #\Newline)
-        (funcall translator :eof)
-        (to-sexp (close-element parser body))))))
+  (let* ((parser (make-instance 'parser))
+         (translator (make-basic-translator-chain (lambda (tok) (process-token parser tok))))
+         (body (open-document parser)))
+    (with-open-file (in file)
+      (loop for c = (read-char in nil nil) while c do (funcall translator c)))
+    (funcall translator #\Newline)
+    (funcall translator #\Newline)
+    (funcall translator :eof)
+    (to-sexp body)))
 
 (defun process-token (parser token)
   (funcall (find-binding parser token) token))
 
-(defun install-document-bindings (parser)
-  (with-bindings (parser token)
+(defun open-document (parser)
+  (let ((body (open-element parser "body")))
+    (with-bindings (parser token)
+      (#\* (open-header-handler parser))
 
-    (#\* (open-header-handler parser))
+      (#\- (open-possible-modeline-handler parser))
 
-    (#\- (open-possible-modeline-handler parser))
+      ((or (text-char-p token) (eql token #\\))
+       (open-paragraph parser "p")
+       (process-token parser token))
 
-    ((or (text-char-p token) (eql token #\\))
-     (open-paragraph parser "p")
-     (process-token parser token))
-
-    ((and (indentation-p token) (>= (spaces token) (+ (current-indentation parser) 4)))
-     (incf (current-indentation parser) 4)
-     (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
+      ((and (indentation-p token) (>= (spaces token) (+ (current-indentation parser) 4)))
+       (incf (current-indentation parser) 4)
+       (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
   
-    ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 2)))
-     (incf (current-indentation parser) 2)
-     (open-section parser (spaces token) "blockquote"))
+      ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 2)))
+       (incf (current-indentation parser) 2)
+       (open-section parser (spaces token) "blockquote"))
   
-    ((and (indentation-p token) (= (spaces token) (current-indentation parser))))
+      ((and (indentation-p token) (= (spaces token) (current-indentation parser))))
     
-    (:blank)
-    (:eof (pop-frame))))
+      (:blank)
+      (:eof (pop-frame-and-element body)))
+    body))
 
 (defun open-paragraph (parser tag)
    (let ((paragraph (open-element parser tag)))
      (with-bindings (parser token)
        (#\\ (open-slash-handler parser))
        (#\Newline (add-text parser #\Space))
-       ((text-char-p token)
-        (add-text parser token))
-       (:blank 
-        (pop-frame-and-element paragraph)))))
+       ((text-char-p token) (add-text parser token))
+       (:blank (pop-frame-and-element paragraph)))))
 
 (defun open-block (parser tag)
   (when (string= tag "note")
@@ -188,29 +184,22 @@
 
 (defun open-subdocument (parser tag)
   (let ((element (open-element parser tag))
-        (indentation (current-indentation parser)))
+        (original-indentation (current-indentation parser)))
     (with-bindings (parser token)
+      (:eof (error "Subdocument ~a not closed." tag))
+
       (#\} 
-       (setf (current-indentation parser) indentation)
+       (setf (current-indentation parser) original-indentation)
        (pop-frame-and-element element))
 
+      ;; We need these two binding that seemingly duplicate the ones
+      ;; in open-document because the open-paragraph binding for
+      ;; text-chars will shadow the open-document ones.
       (#\* (open-header-handler parser))
       
-      ((text-char-p token)
+      ((or (text-char-p token) (eql token #\\))
        (open-paragraph parser "p")
-       (process-token parser token))
-
-      ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 4)))
-       (incf (current-indentation parser) 4)
-       (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
-      
-      ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 2)))
-       (incf (current-indentation parser) 2)
-       (open-section parser (spaces token) "blockquote"))
-      
-      ((and (indentation-p token) (= (spaces token) (current-indentation parser))))
-      
-      (:blank))))
+       (process-token parser token)))))
 
 (defun open-section (parser indentation tag)
   (let ((section (open-element parser tag)))
@@ -297,11 +286,11 @@
        (append-text so-far token))
       ((string= so-far "-*-")
        (when (eql token :blank) (pop-frame)))
-      (t 
+      (t
+       (append-text so-far token)
        (pop-frame)
+       (open-paragraph parser "p")
        (loop for c across so-far do (process-token parser c))))))
-
-
 
 (defun open-slash-handler (parser)
   (with-bindings (parser token)
@@ -327,9 +316,11 @@
        (append-text name token)))))
 
 (defun text-char-p (char)
+  "Characters that can appear unescaped in non-verbatim sections."
   (and (characterp char) (not (find char "\\[]{}"))))
 
 (defun tag-name-char-p (char)
+  "Characters that can appear in tag names (i.e. between a '\' and a '{')."
   (and (characterp char) (alphanumericp char)))
 
 (defun add-text (parser text)
@@ -349,14 +340,8 @@
     (string (loop for c across text do (vector-push-extend c string)))
     (t (format t "~&Appending non text text: ~a" text))))
 
-(defun ignore-token (token) (format t "~&Ignoring ~a" token))
 
 (defun illegal-token (token) (error "Illegal token ~a" token))
-
-
-
-
-
 
 ;;
 ;; Character translators -- cleans up input and generates blanks and indentations
@@ -430,64 +415,3 @@
      (make-blank-translator
       (make-indentation-translator end))))))
 
-;;
-;; Unit tests
-;;
-
-
-(defparameter *expected-failures* ())
-(defparameter *to-skip* '(19))
-
-(defun test-number (txt)
-  (parse-integer (subseq (pathname-name txt) 5)))
-
-(defun tests ()
-  (loop for file in (directory "./tests/test_*.txt")
-     for n = (test-number file)
-     for ok = 
-       (cond
-         ((member n *to-skip*)
-          (format t "~&Skipping test ~d." n)
-          t)
-         (t
-          (or (test-file file) (member n *expected-failures*))))
-     while ok))
-
-
-(defun test (n)
-  (test-file 
-   (make-pathname
-    :directory '(:relative "tests")
-    :name (format nil "test_~2,'0d" n)
-    :type "txt")))
-
-(defun test-file (txt)
-  (let* ((sexp (make-pathname :type "sexp" :defaults txt))
-         (parsed (parse-file txt))
-         (expected (file->sexp sexp))
-         (ok (equal parsed expected))
-         (n (test-number txt)))
-    (if ok
-        (format t "~&[~d] okay." n)
-        (format t "~&[~d] FAIL:~2&Got:~2&~s~2&Expected:~2&~s" n parsed expected))
-    ok))
-
-(defun file->sexp (file)
-  (with-open-file (in file)
-    (read in nil nil)))
-
-(defun show-string (string)
-  (let ((output ()))
-    (let ((translator (make-basic-translator-chain (lambda (char) (push char output)))))
-      (loop for c across string do (funcall translator c))
-      (funcall translator :eof)
-      (nreverse output))))
-
-(defun show-file (file)
-  (with-open-file (in file)
-    (let ((output ()))
-      (let ((translator (make-basic-translator-chain (lambda (char) (push char output)))))
-        (loop for c = (read-char in nil nil)
-           while c do (funcall translator c))
-        (funcall translator :eof)
-        (nreverse output)))))
