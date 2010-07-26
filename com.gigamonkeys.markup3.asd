@@ -6,4 +6,5 @@
   :name "com.gigamonkeys.markup3"
   :components
   ((:file "packages")
-   (:file "markup3" :depends-on ("packages"))))
+   (:file "markup3" :depends-on ("packages")))
+  :depends-on (:com.gigamonkeys.macro-utilities))

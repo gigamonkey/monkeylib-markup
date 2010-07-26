@@ -6,4 +6,4 @@
 (in-package :cl-user)
 
 (defpackage :com.gigamonkeys.markup3
-  (:use :common-lisp))
+  (:use :common-lisp :com.gigamonkeys.macro-utilities))
