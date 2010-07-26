@@ -52,8 +52,8 @@
                               (character key)
                               (symbol key)
                               (string key)
-                              (cons `(lambda (,token) ,key)))
-                  (lambda (,token) (declare (ignorable token)) ,@body)))))))
+                              (cons `(lambda (,token) (declare (ignorable ,token)) ,key)))
+                  (lambda (,token) (declare (ignorable ,token)) ,@body)))))))
 
 (defun indentation-p (x) (typep x 'indentation))
 
@@ -150,20 +150,21 @@
 
     (#\* (open-header-handler parser))
 
+    (#\- (open-possible-modeline-handler parser))
+
     ((or (text-char-p token) (eql token #\\))
      (open-paragraph parser "p")
      (process-token parser token))
 
-    ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 4)))
-     (setf (current-indentation parser) (spaces token))
-     (open-verbatim parser (spaces token) "pre"))
+    ((and (indentation-p token) (>= (spaces token) (+ (current-indentation parser) 4)))
+     (incf (current-indentation parser) 4)
+     (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
   
     ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 2)))
-     (setf (current-indentation parser) (spaces token))
+     (incf (current-indentation parser) 2)
      (open-section parser (spaces token) "blockquote"))
   
-    ((and (indentation-p token) (= (spaces token) (current-indentation parser)))
-     (setf (current-indentation parser) (spaces token)))
+    ((and (indentation-p token) (= (spaces token) (current-indentation parser))))
     
     (:blank)
     (:eof (pop-frame))))
@@ -200,21 +201,16 @@
        (process-token parser token))
 
       ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 4)))
-       (setf (current-indentation parser) (spaces token))
-       (open-verbatim parser (spaces token) "pre"))
+       (incf (current-indentation parser) 4)
+       (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
       
       ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 2)))
-       (setf (current-indentation parser) (spaces token))
+       (incf (current-indentation parser) 2)
        (open-section parser (spaces token) "blockquote"))
       
-      ((and (indentation-p token) (= (spaces token) (current-indentation parser)))
-       (setf (current-indentation parser) (spaces token)))
+      ((and (indentation-p token) (= (spaces token) (current-indentation parser))))
       
-      (:blank
-       (break "Blank in subdocument.")
-       )
-      
-)))
+      (:blank))))
 
 (defun open-section (parser indentation tag)
   (let ((section (open-element parser tag)))
@@ -253,11 +249,10 @@
        (pop-frame-and-element item)
        (process-token parser token)))))
 
-(defun open-verbatim (parser indentation tag)
+(defun open-verbatim (parser extra-indentation tag)
   (let ((verbatim (open-element parser tag))
-        (current-indentation indentation)
         (blanks 0)
-        (bol nil))
+        (bol t))
 
     (with-bindings (parser token)
       (#\Newline 
@@ -272,14 +267,14 @@
        (when bol
          (loop repeat blanks do (add-text parser *blank*))
          (setf blanks 0)
-         (loop repeat current-indentation do (add-text parser #\Space))
+         (loop repeat extra-indentation do (add-text parser #\Space))
          (setf bol nil))
        (add-text parser token))
 
-      ((and (indentation-p token) (>= (spaces token) indentation))
-       (setf current-indentation (- (spaces token) indentation)))
+      ((and (indentation-p token) (>= (spaces token) (current-indentation parser)))
+       (setf extra-indentation (- (spaces token) (current-indentation parser))))
 
-      ((and (indentation-p token) (< (spaces token) indentation))
+      ((and (indentation-p token) (< (spaces token) (current-indentation parser)))
        (setf (current-indentation parser) (spaces token))
        (pop-frame-and-element verbatim)
        (process-token parser token)))))
@@ -292,6 +287,21 @@
        (pop-frame)
        (open-paragraph parser (format nil "h~d" level)))
       (t (illegal-token token)))))
+
+(defun open-possible-modeline-handler (parser)
+  (let ((so-far (make-text-buffer "-")))
+    (with-bindings (parser token)
+      ((and (eql token #\*) (string= so-far "-"))
+       (append-text so-far token))
+      ((and (eql token #\-) (string= so-far "-*"))
+       (append-text so-far token))
+      ((string= so-far "-*-")
+       (when (eql token :blank) (pop-frame)))
+      (t 
+       (pop-frame)
+       (loop for c across so-far do (process-token parser c))))))
+
+
 
 (defun open-slash-handler (parser)
   (with-bindings (parser token)
@@ -426,7 +436,7 @@
 
 
 (defparameter *expected-failures* ())
-(defparameter *to-skip* ())
+(defparameter *to-skip* '(19))
 
 (defun test-number (txt)
   (parse-integer (subseq (pathname-name txt) 5)))
