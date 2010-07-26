@@ -25,7 +25,15 @@
   (print-unreadable-object (object stream)
     (format stream "tag: ~a" (tag object))))
 
-(defclass indentation ()
+(defclass token ()
+  ((offset :initarg :offset :accessor offset)
+   (content :initarg :content :accessor content)))
+
+(defmethod print-object ((object token) stream)
+  (print-unreadable-object (object stream :type t)
+    (format stream "content: ~a offset: ~a" (content object) (offset object))))
+
+(defclass indentation (token)
   ((spaces :initarg :spaces :accessor spaces)))
 
 (defmethod print-object ((object indentation) stream)
@@ -55,7 +63,7 @@
                               (cons `(lambda (,token) (declare (ignorable ,token)) ,key)))
                   (lambda (,token) (declare (ignorable ,token)) ,@body)))))))
 
-(defun indentation-p (x) (typep x 'indentation))
+(defun indentation-p (token) (typep token 'indentation))
 
 (defgeneric to-sexp (thing))
 
@@ -106,12 +114,13 @@
     (cdr (assoc token bindings :test #'key-match))))
 
 (defun key-match (token key)
+  ;(break "Looking for ~s with ~s" token key)
   (etypecase key
     ((eql t) t)
-    (character (eql token key))
+    (character (eql (content token) key))
     (function (funcall key token))
-    (string (find token key))
-    (symbol (eql token key))))
+    (string (find (content token) key))
+    (symbol (eql (content token) key))))
 
 (defun open-element (parser tag)
   (with-slots (elements) parser
@@ -149,7 +158,9 @@
 
       (#\- (open-possible-modeline-handler parser))
 
-      ((or (text-char-p token) (eql token #\\))
+      #+(or)(#\[ (open-possible-link-definition parser))
+
+      ((or (text-char-p token) (eql (content token) #\\))
        (open-paragraph parser "p")
        (process-token parser token))
 
@@ -197,7 +208,7 @@
       ;; text-chars will shadow the open-document ones.
       (#\* (open-header-handler parser))
       
-      ((or (text-char-p token) (eql token #\\))
+      ((or (text-char-p token) (eql (content token) #\\))
        (open-paragraph parser "p")
        (process-token parser token)))))
 
@@ -205,7 +216,7 @@
   (let ((section (open-element parser tag)))
     (with-bindings (parser token)
       ("#-"
-       (setf (tag section) (case token (#\# :ol) (#\- :ul)))
+       (setf (tag section) (case (content token) (#\# :ol) (#\- :ul)))
        (open-list parser token indentation)
        (process-token parser token))
       ((and (indentation-p token) (< (spaces token) indentation))
@@ -234,7 +245,7 @@
        (setf (current-indentation parser) (spaces token))
        (pop-frame-and-element item)
        (process-token parser token))
-      ((eql list-marker token)
+      ((eql list-marker (content token))
        (pop-frame-and-element item)
        (process-token parser token)))))
 
@@ -252,7 +263,7 @@
        (incf blanks)
        (setf bol t))
 
-      ((characterp token)
+      ((characterp (content token))
        (when bol
          (loop repeat blanks do (add-text parser *blank*))
          (setf blanks 0)
@@ -278,26 +289,42 @@
       (t (illegal-token token)))))
 
 (defun open-possible-modeline-handler (parser)
-  (let ((so-far (make-text-buffer "-")))
+  (let ((so-far (make-text-buffer "-"))
+        (inital-offset 0))
     (with-bindings (parser token)
-      ((and (eql token #\*) (string= so-far "-"))
+      ((and (eql (content token) #\*) (string= so-far "-"))
+       (setf inital-offset (- (offset token) 2))
        (append-text so-far token))
-      ((and (eql token #\-) (string= so-far "-*"))
+      ((and (eql (content token) #\-) (string= so-far "-*"))
        (append-text so-far token))
       ((string= so-far "-*-")
-       (when (eql token :blank) (pop-frame)))
+       (when (eql (content token) :blank) (pop-frame)))
       (t
        (append-text so-far token)
        (pop-frame)
        (open-paragraph parser "p")
-       (loop for c across so-far do (process-token parser c))))))
+       (loop for c across so-far
+          for o from inital-offset
+          do (process-token parser (token c o)))))))
 
+#+(or)(defun open-possible-link-definition (parser)
+  (with-bindings (parser token)
+    (#\[ (open-link parser))
+    (#\] (whatever))
+    ((text-char-p token))))
+
+#+(or)(defun open-link (parser)
+  (let ((link (open-element parser "link")))
+    (with-bindings (parser token)
+      (#\] (pop-frame-and-element link))
+      ((text-char-p token) (add-text parser token)))))
+       
 (defun open-slash-handler (parser)
   (with-bindings (parser token)
     ((tag-name-char-p token)
      (pop-frame)
      (open-tag-name-handler parser token))
-    ("\\{}*[]#-"
+    ("\\{}*#-"
      (pop-frame)
      (add-text parser token))
     (t (illegal-token token))))
@@ -315,13 +342,15 @@
       ((tag-name-char-p token)
        (append-text name token)))))
 
-(defun text-char-p (char)
+(defun text-char-p (token)
   "Characters that can appear unescaped in non-verbatim sections."
-  (and (characterp char) (not (find char "\\[]{}"))))
+  (let ((char (content token)))
+    (and (characterp char) (not (find char "\\{}")))))
 
-(defun tag-name-char-p (char)
+(defun tag-name-char-p (token)
   "Characters that can appear in tag names (i.e. between a '\' and a '{')."
-  (and (characterp char) (alphanumericp char)))
+  (let ((char (content token)))
+    (and (characterp char) (alphanumericp char))))
 
 (defun add-text (parser text)
   (let ((element (first (elements parser))))
@@ -336,6 +365,7 @@
 
 (defun append-text (string text)
   (typecase text
+    (token (append-text string (content text)))
     (character (vector-push-extend text string))
     (string (loop for c across text do (vector-push-extend c string)))
     (t (format t "~&Appending non text text: ~a" text))))
@@ -347,71 +377,80 @@
 ;; Character translators -- cleans up input and generates blanks and indentations
 ;;
 
+(defun token (content offset)
+  (make-instance 'token :content content :offset offset))
+
+(defun make-tokenizer (next)
+  (let ((offset -1))
+    (lambda (char)
+      (funcall next (token char (incf offset))))))
+
 (defun make-tab-translator (next)
   "Translate Tab characters to *spaces-per-tab* Space characters."
-  (lambda (char)
-    (case char
-      (#\Tab (loop repeat *spaces-per-tab* do (funcall next #\Space)))
-      (t (funcall next char)))))
+  (lambda (token)
+    (case (content token)
+      (#\Tab (loop repeat *spaces-per-tab* do (funcall next (token #\Space (offset token)))))
+      (t (funcall next token)))))
 
 (defun make-eol-translator (next)
   "Translate CRLF and CR to LF"
   (let ((after-cr nil))
-    (lambda (char)
-      (case char
+    (lambda (token)
+      (case (content token)
         (#\Return (setf after-cr t))
         (t (cond
              (after-cr 
-              (funcall next #\Newline)
-              (unless (eql char #\Newline) (funcall next char)))
-             (t (funcall next char)))
-
+              (funcall next (token #\Newline (1- (offset token))))
+              (unless (eql (content token) #\Newline) (funcall next token)))
+             (t (funcall next token)))
            (setf after-cr nil))))))
 
 (defun make-trailing-space-translator (next)
   (let ((spaces-seen 0))
-    (lambda (char)
-      (case char
+    (lambda (token)
+      (case (content token)
         (#\Space (incf spaces-seen))
-        (t (unless (eql char #\Newline)
-             (loop repeat spaces-seen do (funcall next #\Space)))
+        (t (unless (eql (content token) #\Newline)
+             (loop repeat spaces-seen
+                for offset from (- (offset token) spaces-seen)
+                do (funcall next (token #\Space offset))))
            (setf spaces-seen 0)
-           (funcall next char))))))
+           (funcall next token))))))
 
 (defun make-blank-translator (next)
   "Translate more than one consecutive newlines into :blank"
   (let ((newlines-seen 0))
-    (lambda (char)
-      (case char
+    (lambda (token)
+      (case (content token)
         (#\Newline (incf newlines-seen))
         (t (cond
-             ((= newlines-seen 1) (funcall next #\Newline))
-             ((> newlines-seen 1) (funcall next :blank)))
-
+             ((= newlines-seen 1) (funcall next (token #\Newline (1- (offset token)))))
+             ((> newlines-seen 1) (funcall next (token :blank (1- (offset token))))))
            (setf newlines-seen 0)
-           (funcall next char))))))
+           (funcall next token))))))
 
 (defun make-indentation-translator (next)
   (let ((in-indentation t)
         (spaces-seen 0))
-    (lambda (char)
+    (lambda (token)
       (cond
-        ((and in-indentation (eql char #\Space))
+        ((and in-indentation (eql (content token) #\Space))
          (incf spaces-seen))
-        ((or (eql char #\Newline) (eql char :blank))
+        ((or (eql (content token) #\Newline) (eql (content token) :blank))
          (setf spaces-seen 0)
          (setf in-indentation t)
-         (funcall next char))
+         (funcall next token))
         (t
          (when in-indentation
-           (funcall next (make-instance 'indentation :spaces spaces-seen))
+           (funcall next (make-instance 'indentation :spaces spaces-seen :content :indent :offset (- (offset token) spaces-seen)))
            (setf in-indentation nil))
-         (funcall next char))))))
+         (funcall next token))))))
 
 (defun make-basic-translator-chain (end)
-  (make-tab-translator 
-   (make-eol-translator
-    (make-trailing-space-translator
-     (make-blank-translator
-      (make-indentation-translator end))))))
+  (make-tokenizer
+   (make-tab-translator 
+    (make-eol-translator
+     (make-trailing-space-translator
+      (make-blank-translator
+       (make-indentation-translator end)))))))
 
