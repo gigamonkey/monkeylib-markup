@@ -69,6 +69,18 @@
 
 (defun indentation-p (token) (typep token 'indentation))
 
+(defun %indentation-compare (token spaces cmp)
+  (and (indentation-p token) (funcall cmp (spaces token) spaces)))
+
+(defun indentation= (token spaces)
+  (%indentation-compare token spaces #'=))
+
+(defun indentation< (token spaces)
+  (%indentation-compare token spaces #'<))
+
+(defun indentation>= (token spaces)
+  (%indentation-compare token spaces #'>=))
+
 (defgeneric to-sexp (thing))
 
 (defmethod to-sexp ((string string)) string)
@@ -168,15 +180,15 @@
        (open-paragraph parser "p")
        (process-token parser token))
 
-      ((and (indentation-p token) (>= (spaces token) (+ (current-indentation parser) *verbatim-indentation*)))
+      ((indentation>= token (+ (current-indentation parser) *verbatim-indentation*))
        (incf (current-indentation parser) *verbatim-indentation*)
        (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
   
-      ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) *blockquote-indentation*)))
+      ((indentation=  token (+ (current-indentation parser) *blockquote-indentation*))
        (incf (current-indentation parser) *blockquote-indentation*)
        (open-section parser (spaces token) "blockquote"))
   
-      ((and (indentation-p token) (= (spaces token) (current-indentation parser))))
+      ((indentation= token (current-indentation parser)))
     
       (:blank)
       (:eof (pop-frame-and-element body)))
@@ -223,18 +235,22 @@
        (setf (tag section) (case (content token) (#\# :ol) (#\- :ul)))
        (open-list parser token indentation)
        (process-token parser token))
-      ((and (indentation-p token) (= (spaces token) (+ (- indentation *blockquote-indentation*) 3)))
+      ((indentation= token (+ (- indentation *blockquote-indentation*) *verbatim-indentation*))
+       ;; This is a bit of a kludge. We need to fall through to the
+       ;; underlying document indentation handlers but they won't work
+       ;; until we change the parser's current-indentation. Which
+       ;; suggests that's maybe a wrong approach.
        (decf (current-indentation parser) *blockquote-indentation*)
        (pop-frame-and-element section)
        (process-token parser token))
-      ((and (indentation-p token) (< (spaces token) indentation))
+      ((indentation< token indentation)
        (setf (current-indentation parser) (spaces token))
        (pop-frame-and-element section)
        (process-token parser token)))))
 
 (defun open-list (parser list-marker indentation)
   (with-bindings (parser token)
-    ((and (indentation-p token) (< (spaces token) indentation))
+    ((indentation< token indentation)
      (setf (current-indentation parser) (spaces token))
      (pop-frame)
      (process-token parser token))
@@ -249,7 +265,7 @@
 (defun open-list-item (parser list-marker indentation)
   (let ((item (open-element parser "li")))
     (with-bindings (parser token)
-      ((and (indentation-p token) (< (spaces token) indentation))
+      ((indentation< token indentation)
        (setf (current-indentation parser) (spaces token))
        (pop-frame-and-element item)
        (process-token parser token))
@@ -279,10 +295,10 @@
          (setf bol nil))
        (add-text parser token))
 
-      ((and (indentation-p token) (>= (spaces token) (current-indentation parser)))
+      ((indentation>= token (current-indentation parser))
        (setf extra-indentation (- (spaces token) (current-indentation parser))))
 
-      ((and (indentation-p token) (< (spaces token) (current-indentation parser)))
+      ((indentation< token (current-indentation parser))
        (decf (current-indentation parser) *verbatim-indentation*)
        (pop-frame-and-element verbatim)
        (process-token parser token)))))
