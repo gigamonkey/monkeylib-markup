@@ -10,6 +10,10 @@
 
 (defparameter *blank* (format nil "~c~c" #\Newline #\Newline))
 
+(defparameter *blockquote-indentation* 2)
+
+(defparameter *verbatim-indentation* 3)
+
 (defclass parser ()
   ((bindings :initform () :accessor bindings)
    (elements :initform () :accessor elements)
@@ -164,12 +168,12 @@
        (open-paragraph parser "p")
        (process-token parser token))
 
-      ((and (indentation-p token) (>= (spaces token) (+ (current-indentation parser) 4)))
-       (incf (current-indentation parser) 4)
+      ((and (indentation-p token) (>= (spaces token) (+ (current-indentation parser) *verbatim-indentation*)))
+       (incf (current-indentation parser) *verbatim-indentation*)
        (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
   
-      ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) 2)))
-       (incf (current-indentation parser) 2)
+      ((and (indentation-p token) (= (spaces token) (+ (current-indentation parser) *blockquote-indentation*)))
+       (incf (current-indentation parser) *blockquote-indentation*)
        (open-section parser (spaces token) "blockquote"))
   
       ((and (indentation-p token) (= (spaces token) (current-indentation parser))))
@@ -218,6 +222,10 @@
       ("#-"
        (setf (tag section) (case (content token) (#\# :ol) (#\- :ul)))
        (open-list parser token indentation)
+       (process-token parser token))
+      ((and (indentation-p token) (= (spaces token) (+ (- indentation *blockquote-indentation*) 3)))
+       (decf (current-indentation parser) *blockquote-indentation*)
+       (pop-frame-and-element section)
        (process-token parser token))
       ((and (indentation-p token) (< (spaces token) indentation))
        (setf (current-indentation parser) (spaces token))
@@ -275,7 +283,7 @@
        (setf extra-indentation (- (spaces token) (current-indentation parser))))
 
       ((and (indentation-p token) (< (spaces token) (current-indentation parser)))
-       (setf (current-indentation parser) (spaces token))
+       (decf (current-indentation parser) *verbatim-indentation*)
        (pop-frame-and-element verbatim)
        (process-token parser token)))))
 

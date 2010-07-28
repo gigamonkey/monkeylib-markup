@@ -5,16 +5,16 @@ to come to the aid of their party.
 
 Here comes some code
 
-    if (this) {
+   if (this) {
 
-      // this should be indented more
-      // And this \ should be no problem
-      // Another line
+     // this should be indented more
+     // And this \ should be no problem
+     // Another line
 
-      // Another line after a blank
-      // More
-      
-    }
+     // Another line after a blank
+     // More
+
+   }
 
 The quick brown fox jumps over the lazy dog.
 

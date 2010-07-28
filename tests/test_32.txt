@@ -6,6 +6,6 @@ Regular paragraph\note{* Header in note
 
 Regular paragraph
 
-    Verbatim \ verbatim
+   Verbatim \ verbatim
 
 } end of main paragraph.

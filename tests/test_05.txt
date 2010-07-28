@@ -5,12 +5,12 @@ to come to the aid of their party.
 
   Here is a blockquote. And it's going to have some code in it.
 
-      if (this) {
+     if (this) {
 
-        // this should be indented more
-        // And this \ should be no problem
+       // this should be indented more
+       // And this \ should be no problem
 
-      }
+     }
 
   Here's some more of the blockquote.
 
