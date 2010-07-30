@@ -1,0 +1,205 @@
+-*- mode: markup -*-
+
+* Markup
+
+Markup is a text markup language primarily useful for prose documents
+such as books and articles. It is designed to be editable in a plain
+text editor\note{To the extent that Emacs can be considered a plain
+text editor.} and to allow for arbitrary logical markup.\note{The
+arbitrary logical markup is the main difference between Markup and
+both Markdown and ReStructuredText. For instance, when I was writing
+\book{Practical Common Lisp} I tagged names that were part of the
+\code{COMMON-LISP} package, with \code{\\cl\{…\}} so they could be
+distinguished from other names from code (tagged as
+\code{\\code\{…\}}). Similarly, in the Markup files for \book{Coders
+at Work}, my book of Q&A interviews, I used \code{\\n\{…\}} to tag the
+speaker names, leaving it to later to decide how I wanted to style
+those. As far as I know, there’s no way to do that kind of markup in
+Markdown and ReStructuredText.}
+
+A complete Markup processor consists of a parser that parses text
+files into some generic tree data structure representing the logical
+structure of the document and then one or more backends that given
+such a data structure can render it in some way, e.g. HTML, PDF, TeX,
+RTF, etc. The exact details of how the logical document structure is
+mapped to a given output format is not specified by Markup. In other
+words 
+
+For example, an HTML backend might map certain elements of a
+Markup document to the obvious corresponding HTML tags while others,
+special-purpose to a particular document, would need to be mapped to,
+say, \code{spans} with a particular \code{class} attribute. A given
+Markup system might provide a more or less convenient way to specify
+such mappings.\note{One not overly convenient way to handle this, is
+to write a custom backend for a given project. Thus the semantics
+Which is fine when each project is a book.}
+
+
+Markup files consist of Unicode text encoded in UTF-8. The basic
+syntax is similar to Markdown and ReStructuredText with a bit of TeX
+thrown in for good measure. The details follow.
+
+** Normal paragraphs
+
+Normal paragraphs are simply blocks of text separated by one or more
+blank lines. They can contain single line breaks, which are converted
+to spaces during parsing. The body of a paragraph can contain tagged
+markup discussed below.
+
+** Headers
+
+Headers are marked as in Emacs outline-mode, with leading \code{*}’s. The
+more stars the lower in the hierarchy the header. Thus:
+
+   * This is a level 1 heading (e.g. H1 in HTML)
+
+   ** This is a level 2 heading (e.g. H2 in HTML)
+
+   *** And so on …
+
+The content of the header is everything after the \code{*} and the
+subsequent space, which is required and is otherwise parsed just like
+a paragraph.
+
+** Sections
+
+“Sections” are indicated by indentation. Blank lines in a section,
+however, do not need to be indented. A section ends at the end of the
+file or by the return to a less-indented section. Sections can also be
+nested. There are three kinds of sections.
+
+\b{Block quotes} are demarcated by two spaces of indentation relative
+to the enclosing section and can contain their own paragraphs,
+headers, lists, and verbatim sections.
+
+\b{Verbatim sections} are indented three spaces relative to the
+enclosing section. Within a verbatim section all text is captured
+exactly as is. (Modulo the cleanups that occur prior to parsing; see
+“Clean and Dirty” below.)
+
+\b{Lists} are demarcated by two spaces of indentation followed by a
+list marker, either ‘\code{#}’ for an ordered (i.e. numbered) list or
+‘\code{-}’ for an unordered (i.e. bulleted) list. The list marker must
+be followed by a space and then the text of the first list item. A
+single list item can contain multiple paragraphs, the contents of
+which are indented to line up under first character of the beginning
+of the list item. Subsequent items are marked with another list marker
+in the same column as the original list marker and another space. For
+example:
+
+   This is a regular paragraph.
+
+     # This is the first item of a list consisting of one paragraph
+       that spans a couple lines.
+
+     # This is the second item.
+
+     # This is the third item.
+
+       This is another paragraph in the third item.
+
+   This is another paragraph.
+
+Could be rendered in HTML as:
+
+   <p>This is a regular paragraph.</p>
+
+   <ol>
+     <li>
+       <p>This is the first item of a list consisting of one
+          paragraph that spans a couple lines.</p>
+     </li>
+
+     <li>
+       <p>This is the second item.</p>
+     </li>
+
+     <li>
+       <p>This is the third item.</p>
+
+       <p>This is another paragraph in the third item.</p>
+     </li>
+   </ol>
+
+   <p>This is another paragraph.</p>
+
+** Tagged markup
+
+For all other markup, Markup uses the TeX-like notation
+\code{\\\i{tagname}\{\i{stuff}\}}. Any non-empty sequence of
+alphanumeric characters can be used as a tag name. Tagged markup can
+nest so you can have:
+
+   \i{italic with \b{some bold added} and back to just italic}
+
+Certain tag names can be used to mark sub-documents which are parsed
+differently than simple spans of text. The content of a
+sub-document—between the opening and closing \{\}s—is parsed like a
+document so it will contain at least one paragraph and can contain
+headers, block quotes, lists, verbatim sections, and even nested
+sub-documents. Footnotes, for example, are commonly set up to be parsed
+as sub-documents. For example:
+
+   This is an example paragraph.\note{This is a footnote whose
+   reference will appear right after the period before ‘paragraph’.
+
+   This is a second paragraph of the footnote.} Now back to the main
+   paragraph.
+
+If a sub-document is embedded in a paragraph that is part of an
+indented section (i.e. a block quote or a list) then subsequent lines
+of the sub-document should be indented the same as the enclosing
+paragraph:
+
+   This is a regular paragraph.
+
+     This is a block quote.\note{This is a footnote within the
+     block quote.
+
+     This is a second paragraph in the footnote.} Back to the
+     block quote paragraph.
+
+** Escapes
+
+Outside of verbatim sections, a backslash can escape \code{\\},
+\code{\{}, \code{\}}, \code{*}, \code{#}, and \code{-}, stripping them of
+their syntactic significance. The first three must be escaped whenever
+they appear outside a verbatim section as part of the text. The others
+may be escaped anytime, but it is only necessary when they would
+otherwise have syntactic significance. For example, \code{*} does not
+need to be escaped except at the beginning of a paragraph, where it
+would otherwise mark the paragraph as a header.
+
+   * This is a header
+
+   \* This is a paragraph that starts with * (note no escape here)
+   that contains a backslash: \\, an open brace: \{, and a close
+   brace: \}
+
+     \# This is a block quote paragraph starting with #, not a list.
+
+** Clean vs Dirty files
+
+From an implementor’s point of view, it’d be nice if all Markup files
+would be “clean” according to three criteria::
+
+  # They would contains no tab characters.
+
+  # All lines would be ended by a single newline character (U+000A).
+
+  # There would be no spaces immediately before the end of a line.
+    This is especially important in lines that contain no other text.
+
+However, files that violate these criteria likely will not \i{look}
+any different than if they didn’t, so it would be unreasonably picky
+to declare “dirty” files unparsable. However, since having to deal
+with dirty files can create weird corner cases in the parser, the
+Markup specification explicitly allows implementations to clean up
+dirty files—either in advance of parsing or on the fly—by:
+
+  # Converting all tabs to eight spaces.
+
+  # Normalizing the line endings CR and CRLF to LF.
+
+  # Removing trailing spaces from lines.
+

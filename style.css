@@ -1,0 +1,29 @@
+@media screen {
+    body { margin: 1in 4.5in; font-size: 24px; }
+    pre { font-size: 16px; }
+}
+
+@media print {
+    body { width: 6in; margin: auto; font-size: 16px; }
+    pre { font-size: 12px; }
+}
+
+
+h1, h2, h3 { font-family: "Gill Sans", sans-serif; 
+             font-weight: 400;
+}
+
+p {
+  line-height: 1.3; 
+  text-indent: 1em;
+  padding: 0;
+  margin: 0;
+}
+
+h1 + p { text-indent: 0; }
+h2 + p { text-indent: 0; }
+h3 + p { text-indent: 0; }
+
+sup { vertical-align: 75%; font-size: 60%; }
+
+.notes { border-top: thin solid black; }

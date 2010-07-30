@@ -4,7 +4,7 @@
 
 (in-package com.gigamonkeys.markup3)
 
-(declaim (optimize (debug 3)))
+;;(declaim (optimize (debug 3)))
 
 (defparameter *spaces-per-tab* 8)
 
@@ -40,6 +40,9 @@
 (defclass indentation (token)
   ((spaces :initarg :spaces :accessor spaces)))
 
+(defclass blank-lines (token)
+  ((lines :initarg :lines :accessor lines)))
+
 (defmethod print-object ((object indentation) stream)
   (print-unreadable-object (object stream :type t :identity nil)
     (format stream "~a" (spaces object))))
@@ -67,10 +70,11 @@
                               (cons `(lambda (,token) (declare (ignorable ,token)) ,key)))
                   (lambda (,token) (declare (ignorable ,token)) ,@body)))))))
 
-(defun indentation-p (token) (typep token 'indentation))
+(defun blank-p (token)
+  (typep token 'blank-lines))
 
 (defun %indentation-compare (token spaces cmp)
-  (and (indentation-p token) (funcall cmp (spaces token) spaces)))
+  (and (typep token 'indentation) (funcall cmp (spaces token) spaces)))
 
 (defun indentation= (token spaces)
   (%indentation-compare token spaces #'=))
@@ -94,8 +98,6 @@
                                      (string-right-trim " " child)
                                      child)))))
 
-
-
 (defun append-child (element child)
   (let ((cons (current-child-cons element))
         (new-cons (cons child nil)))
@@ -108,29 +110,28 @@
   (car (current-child-cons element)))
 
 (defmethod initialize-instance :after ((parser parser) &key &allow-other-keys)
-  (push-binding parser t (lambda (tok) (error "No binding for ~a in ~a" tok (bindings parser)))))
+  (push-binding parser t (lambda (tok) (error "No binding for ~s in ~s" tok (bindings parser)))))
 
 (defun open-frame (parser)
   (let ((marker (gensym "FRAME-")))
     (push-binding parser marker nil)
     marker))
 
-(defun push-binding (parser key fn)
-  (with-slots (bindings) parser
-    (setf bindings (acons key fn bindings))))
-
 (defun close-frame (parser frame-marker)
   (with-slots (bindings) parser
     (setf bindings (cdr (member frame-marker bindings :key #'car)))))
 
+(defun push-binding (parser key fn)
+  (with-slots (bindings) parser
+    (setf bindings (acons key fn bindings))))
+
 (defun find-binding (parser token)
   "Find the first binding that could handle the given token. A default
-  binding can be established with the key (constantly t)"
+  binding can be established with the key t"
   (with-slots (bindings) parser
     (cdr (assoc token bindings :test #'key-match))))
 
 (defun key-match (token key)
-  ;(break "Looking for ~s with ~s" token key)
   (etypecase key
     ((eql t) t)
     (character (eql (content token) key))
@@ -190,7 +191,8 @@
   
       ((indentation= token (current-indentation parser)))
     
-      (:blank)
+      ((blank-p token))
+    
       (:eof (pop-frame-and-element body)))
     body))
 
@@ -200,11 +202,9 @@
        (#\\ (open-slash-handler parser))
        (#\Newline (add-text parser #\Space))
        ((text-char-p token) (add-text parser token))
-       (:blank (pop-frame-and-element paragraph)))))
+       ((blank-p token) (pop-frame-and-element paragraph)))))
 
 (defun open-block (parser tag)
-  (when (string= tag "note")
-    (break "elements: ~s; bindings: ~s" (elements parser) (bindings parser)))
   (let ((element (open-element parser tag)))
     (with-bindings (parser token)
       (#\} (pop-frame-and-element element)))))
@@ -231,10 +231,12 @@
 (defun open-section (parser indentation tag)
   (let ((section (open-element parser tag)))
     (with-bindings (parser token)
+
       ("#-"
        (setf (tag section) (case (content token) (#\# :ol) (#\- :ul)))
        (open-list parser token indentation)
        (process-token parser token))
+
       ((indentation= token (+ (- indentation *blockquote-indentation*) *verbatim-indentation*))
        ;; This is a bit of a kludge. We need to fall through to the
        ;; underlying document indentation handlers but they won't work
@@ -243,6 +245,7 @@
        (decf (current-indentation parser) *blockquote-indentation*)
        (pop-frame-and-element section)
        (process-token parser token))
+
       ((indentation< token indentation)
        (setf (current-indentation parser) (spaces token))
        (pop-frame-and-element section)
@@ -250,10 +253,12 @@
 
 (defun open-list (parser list-marker indentation)
   (with-bindings (parser token)
+
     ((indentation< token indentation)
      (setf (current-indentation parser) (spaces token))
      (pop-frame)
      (process-token parser token))
+
     ((eql token list-marker)
      (with-bindings (parser token)
        (#\Space 
@@ -269,6 +274,7 @@
        (setf (current-indentation parser) (spaces token))
        (pop-frame-and-element item)
        (process-token parser token))
+
       ((eql list-marker (content token))
        (pop-frame-and-element item)
        (process-token parser token)))))
@@ -283,13 +289,13 @@
        (add-text parser token)
        (setf bol t))
 
-      (:blank 
-       (incf blanks)
+      ((blank-p token)
+       (incf blanks (lines token))
        (setf bol t))
 
       ((characterp (content token))
        (when bol
-         (loop repeat blanks do (add-text parser *blank*))
+         (loop repeat blanks do (add-text parser #\Newline))
          (setf blanks 0)
          (loop repeat extra-indentation do (add-text parser #\Space))
          (setf bol nil))
@@ -322,7 +328,7 @@
       ((and (eql (content token) #\-) (string= so-far "-*"))
        (append-text so-far token))
       ((string= so-far "-*-")
-       (when (eql (content token) :blank) (pop-frame)))
+       (when (blank-p token) (pop-frame)))
       (t
        (append-text so-far token)
        (pop-frame)
@@ -374,7 +380,9 @@
 (defun tag-name-char-p (token)
   "Characters that can appear in tag names (i.e. between a '\' and a '{')."
   (let ((char (content token)))
-    (and (characterp char) (alphanumericp char))))
+    (and (characterp char) 
+         (or (alphanumericp char)
+             (find char "-_.+")))))
 
 (defun add-text (parser text)
   (let ((element (first (elements parser))))
@@ -442,25 +450,29 @@
            (funcall next token))))))
 
 (defun make-blank-translator (next)
-  "Translate more than one consecutive newlines into :blank"
+  "Translate more than one consecutive newlines into a blank-line token"
   (let ((newlines-seen 0))
     (lambda (token)
       (case (content token)
         (#\Newline (incf newlines-seen))
         (t (cond
              ((= newlines-seen 1) (funcall next (token #\Newline (1- (offset token)))))
-             ((> newlines-seen 1) (funcall next (token :blank (1- (offset token))))))
+             ((> newlines-seen 1) (funcall next (make-instance 'blank-lines
+                                                  :lines newlines-seen
+                                                  :content :blank
+                                                  :offset (1- (offset token))))))
            (setf newlines-seen 0)
            (funcall next token))))))
 
 (defun make-indentation-translator (next)
+  "Translate leading spaces into INDENTATION tokens."
   (let ((in-indentation t)
         (spaces-seen 0))
     (lambda (token)
       (cond
         ((and in-indentation (eql (content token) #\Space))
          (incf spaces-seen))
-        ((or (eql (content token) #\Newline) (eql (content token) :blank))
+        ((or (eql (content token) #\Newline) (blank-p token))
          (setf spaces-seen 0)
          (setf in-indentation t)
          (funcall next token))
@@ -477,4 +489,3 @@
      (make-trailing-space-translator
       (make-blank-translator
        (make-indentation-translator end)))))))
-
