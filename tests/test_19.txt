@@ -4,8 +4,6 @@ This is a regular paragraph.
 link] that crosses a line. This [link is not defined]. And here is
 a [link with \i{formatting} in it]
 
-
-
 [This] <is a link definition>
 
 [is a link] <http://www.example.com/>

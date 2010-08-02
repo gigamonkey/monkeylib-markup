@@ -7,5 +7,8 @@
   :components
   ((:file "packages")
    (:file "markup3" :depends-on ("packages"))
-   (:file "tests" :depends-on ("packages")))q
-  :depends-on (:com.gigamonkeys.macro-utilities))
+   (:file "tests" :depends-on ("packages")))
+  :depends-on
+  (:com.gigamonkeys.macro-utilities
+   :com.gigamonkeys.utilities
+   :com.gigamonkeys.foo))

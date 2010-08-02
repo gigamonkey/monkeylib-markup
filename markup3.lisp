@@ -18,7 +18,8 @@
   ((bindings :initform () :accessor bindings)
    (elements :initform () :accessor elements)
    (current-indentation :initform 0 :accessor current-indentation)
-   (subdocument-tags :initform '(:note :comment) :accessor subdocument-tags)))
+   (subdocument-tags :initform '(:note :comment) :accessor subdocument-tags)
+   (parse-links-p :initarg :parse-links-p :initform t :accessor parse-links-p)))
 
 (defclass element ()
   ((tag :initarg :tag :accessor tag)
@@ -69,6 +70,9 @@
                               (string key)
                               (cons `(lambda (,token) (declare (ignorable ,token)) ,key)))
                   (lambda (,token) (declare (ignorable ,token)) ,@body)))))))
+
+(defun token-is (token what)
+  (eql (content token) what))
 
 (defun blank-p (token)
   (typep token 'blank-lines))
@@ -134,10 +138,10 @@
 (defun key-match (token key)
   (etypecase key
     ((eql t) t)
-    (character (eql (content token) key))
+    (character (token-is token key))
     (function (funcall key token))
     (string (find (content token) key))
-    (symbol (eql (content token) key))))
+    (symbol (token-is token key))))
 
 (defun open-element (parser tag)
   (with-slots (elements) parser
@@ -154,10 +158,12 @@
       (setf elements (cdr tail)))
     element))
 
-(defun parse-file (file)
-  (let* ((parser (make-instance 'parser))
+(defun parse-file (file &key (parse-links-p t))
+  (let* ((parser (make-instance 'parser :parse-links-p parse-links-p))
          (translator (make-basic-translator-chain (lambda (tok) (process-token parser tok))))
          (body (open-document parser)))
+    (funcall translator #\Newline)
+    (funcall translator #\Newline)
     (with-open-file (in file)
       (loop for c = (read-char in nil nil) while c do (funcall translator c)))
     (funcall translator #\Newline)
@@ -175,9 +181,11 @@
 
       (#\- (open-possible-modeline-handler parser))
 
-      #+(or)(#\[ (open-possible-link-definition parser))
+      (#\[ 
+       (open-possible-link-definition parser)
+       (process-token parser token))
 
-      ((or (text-char-p token) (eql (content token) #\\))
+      ((or (text-char-p token) (token-is token #\\))
        (open-paragraph parser "p")
        (process-token parser token))
 
@@ -197,12 +205,16 @@
     body))
 
 (defun open-paragraph (parser tag)
-   (let ((paragraph (open-element parser tag)))
-     (with-bindings (parser token)
-       (#\\ (open-slash-handler parser))
-       (#\Newline (add-text parser #\Space))
-       ((text-char-p token) (add-text parser token))
-       ((blank-p token) (pop-frame-and-element paragraph)))))
+  (paragraph-bindings parser (open-element parser tag)))
+
+
+(defun paragraph-bindings (parser paragraph)
+  (with-bindings (parser token)
+    (#\\ (open-slash-handler parser))
+    ((and (parse-links-p parser) (token-is token #\[)) (open-link parser))
+    (#\Newline (add-text parser #\Space))
+    ((text-char-p token) (add-text parser token))
+    ((blank-p token) (pop-frame-and-element paragraph))))
 
 (defun open-block (parser tag)
   (let ((element (open-element parser tag)))
@@ -224,7 +236,7 @@
       ;; text-chars will shadow the open-document ones.
       (#\* (open-header-handler parser))
       
-      ((or (text-char-p token) (eql (content token) #\\))
+      ((or (text-char-p token) (token-is token #\\))
        (open-paragraph parser "p")
        (process-token parser token)))))
 
@@ -322,10 +334,10 @@
   (let ((so-far (make-text-buffer "-"))
         (inital-offset 0))
     (with-bindings (parser token)
-      ((and (eql (content token) #\*) (string= so-far "-"))
+      ((and (token-is token #\*) (string= so-far "-"))
        (setf inital-offset (- (offset token) 2))
        (append-text so-far token))
-      ((and (eql (content token) #\-) (string= so-far "-*"))
+      ((and (token-is token #\-) (string= so-far "-*"))
        (append-text so-far token))
       ((string= so-far "-*-")
        (when (blank-p token) (pop-frame)))
@@ -337,26 +349,48 @@
           for o from inital-offset
           do (process-token parser (token c o)))))))
 
-#+(or)(defun open-possible-link-definition (parser)
-  (with-bindings (parser token)
-    (#\[ (open-link parser))
-    (#\] (whatever))
-    ((text-char-p token))))
+(defun open-possible-link-definition (parser)
+  ;; This is either a paragraph starting with a link or a link
+  ;; definition.
+  (let ((possible-link-def (open-element parser "p"))
+        (spaces 0))
+    (with-bindings (parser token)
+      (#\[ (open-link parser))
+      (#\Space (incf spaces))
+      (#\<  
+       (setf (tag possible-link-def) :link_def)
+       (open-url parser))
+      ((or (text-char-p token) (token-is token #\\))
+       (pop-frame)
+       (paragraph-bindings parser possible-link-def)
+       (when (plusp spaces)
+         (process-token parser (make-instance 'token :content #\Space :offset (1- (offset token)))))
+       (process-token parser token))
+      ((blank-p token) (pop-frame-and-element possible-link-def)))))
 
-#+(or)(defun open-link (parser)
+(defun open-link (parser)
   (let ((link (open-element parser "link")))
     (with-bindings (parser token)
       (#\] (pop-frame-and-element link))
-      ((text-char-p token) (add-text parser token)))))
+      (#\Newline (add-text parser #\Space))
+      ((text-char-p token) (add-text parser token)))
+    link))
+
+(defun open-url (parser)
+  (let ((url (open-element parser "url")))
+    (with-bindings (parser token)
+      (#\> (pop-frame-and-element url))
+      ((url-char-p token) (add-text parser token))
+      (t (error "Illegal token in link definition ~s" token)))))
        
 (defun open-slash-handler (parser)
   (with-bindings (parser token)
+    ("\\{}*#-<"
+     (pop-frame)
+     (add-text parser token))
     ((tag-name-char-p token)
      (pop-frame)
      (open-tag-name-handler parser token))
-    ("\\{}*#-"
-     (pop-frame)
-     (add-text parser token))
     (t (illegal-token token))))
 
 (defun open-tag-name-handler (parser token)
@@ -377,12 +411,17 @@
   (let ((char (content token)))
     (and (characterp char) (not (find char "\\{}")))))
 
+(defun url-char-p (token)
+  ;; FIXME -- this could be made better.
+  (let ((char (content token)))
+    (and (characterp char) (not (eql char #\>)))))
+
 (defun tag-name-char-p (token)
   "Characters that can appear in tag names (i.e. between a '\' and a '{')."
   (let ((char (content token)))
     (and (characterp char) 
          (or (alphanumericp char)
-             (find char "-_.+")))))
+             (find char "_.+")))))
 
 (defun add-text (parser text)
   (let ((element (first (elements parser))))
@@ -433,7 +472,7 @@
         (t (cond
              (after-cr 
               (funcall next (token #\Newline (1- (offset token))))
-              (unless (eql (content token) #\Newline) (funcall next token)))
+              (unless (token-is token #\Newline) (funcall next token)))
              (t (funcall next token)))
            (setf after-cr nil))))))
 
@@ -442,7 +481,7 @@
     (lambda (token)
       (case (content token)
         (#\Space (incf spaces-seen))
-        (t (unless (eql (content token) #\Newline)
+        (t (unless (token-is token #\Newline)
              (loop repeat spaces-seen
                 for offset from (- (offset token) spaces-seen)
                 do (funcall next (token #\Space offset))))
@@ -470,9 +509,9 @@
         (spaces-seen 0))
     (lambda (token)
       (cond
-        ((and in-indentation (eql (content token) #\Space))
+        ((and in-indentation (token-is token #\Space))
          (incf spaces-seen))
-        ((or (eql (content token) #\Newline) (blank-p token))
+        ((or (token-is token #\Newline) (blank-p token))
          (setf spaces-seen 0)
          (setf in-indentation t)
          (funcall next token))

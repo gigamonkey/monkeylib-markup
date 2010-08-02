@@ -6,7 +6,9 @@
 (in-package :cl-user)
 
 (defpackage :com.gigamonkeys.markup3
-  (:use :common-lisp :com.gigamonkeys.macro-utilities)
+  (:use :common-lisp 
+        :com.gigamonkeys.macro-utilities
+        :com.gigamonkeys.utilities)
   (:export :parse-file))
 
 (defpackage :com.gigamonkeys.markup3.html

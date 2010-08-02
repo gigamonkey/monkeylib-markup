@@ -1,0 +1,2 @@
+
+(:BODY (:P "This is a regular paragraph.") (:P (:LINK "This") " is a paragraph that starts with a link. And here " (:LINK "is a link") " that crosses a line. This " (:LINK "link is not defined") ". And here is a " (:LINK "link with " (:I "formatting") " in it")) (:LINK_DEF (:LINK "This") (:URL "is a link definition")) (:LINK_DEF (:LINK "is a link") (:URL "http://www.example.com/")) (:LINK_DEF (:LINK "link with formatting in it") (:URL "http://more/"))) 

@@ -1,6 +1,6 @@
   # This is a list item
 
-  \# This is syntactically bunk.
+  \# This is syntactically bunk and should probably be an error.
 
   # This is a list item in a new list.
 
