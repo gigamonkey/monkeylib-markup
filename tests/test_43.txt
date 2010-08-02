@@ -1,0 +1,1 @@
+This as a [normal link] and this is a [link with a different key|foo] and a [link with a \| in it]

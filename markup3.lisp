@@ -373,8 +373,18 @@
     (with-bindings (parser token)
       (#\] (pop-frame-and-element link))
       (#\Newline (add-text parser #\Space))
+      (#\| (open-link-key parser))
       ((text-char-p token) (add-text parser token)))
     link))
+
+(defun open-link-key (parser)
+  (let ((key (open-element parser "key")))
+    (with-bindings (parser token)
+      (#\]
+       (pop-frame-and-element key)
+       (process-token parser token))
+      (#\Newline (add-text parser #\Space))
+      ((text-char-p token) (add-text parser token)))))
 
 (defun open-url (parser)
   (let ((url (open-element parser "url")))
@@ -385,7 +395,7 @@
        
 (defun open-slash-handler (parser)
   (with-bindings (parser token)
-    ("\\{}*#-<"
+    ("\\{}*#-<|"
      (pop-frame)
      (add-text parser token))
     ((tag-name-char-p token)
