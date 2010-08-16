@@ -191,11 +191,11 @@
 
       ((indentation>= token (+ (current-indentation parser) *verbatim-indentation*))
        (incf (current-indentation parser) *verbatim-indentation*)
-       (open-verbatim parser (- (spaces token) (current-indentation parser)) "pre"))
+       (open-verbatim parser (- (spaces token) (current-indentation parser))))
   
       ((indentation=  token (+ (current-indentation parser) *blockquote-indentation*))
        (incf (current-indentation parser) *blockquote-indentation*)
-       (open-section parser (spaces token) "blockquote"))
+       (open-blockquote-or-list parser (spaces token)))
   
       ((indentation= token (current-indentation parser)))
     
@@ -240,8 +240,8 @@
        (open-paragraph parser "p")
        (process-token parser token)))))
 
-(defun open-section (parser indentation tag)
-  (let ((section (open-element parser tag)))
+(defun open-blockquote-or-list (parser indentation)
+  (let ((section (open-element parser "blockquote")))
     (with-bindings (parser token)
 
       ("#-"
@@ -291,8 +291,8 @@
        (pop-frame-and-element item)
        (process-token parser token)))))
 
-(defun open-verbatim (parser extra-indentation tag)
-  (let ((verbatim (open-element parser tag))
+(defun open-verbatim (parser extra-indentation)
+  (let ((verbatim (open-element parser "pre"))
         (blanks 0)
         (bol t))
 
@@ -395,13 +395,12 @@
        
 (defun open-slash-handler (parser)
   (with-bindings (parser token)
-    ("\\{}*#-<|"
+    ((not (tag-name-char-p token))
      (pop-frame)
      (add-text parser token))
     ((tag-name-char-p token)
      (pop-frame)
-     (open-tag-name-handler parser token))
-    (t (illegal-token token))))
+     (open-tag-name-handler parser token))))
 
 (defun open-tag-name-handler (parser token)
   (let ((name (make-text-buffer token)))

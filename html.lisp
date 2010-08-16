@@ -1,14 +1,57 @@
 (in-package :com.gigamonkeys.markup3.html)
 
-(defvar *tag-mappings*
-  '((:book . :i)))
+(defparameter *amazon-link* "http://www.amazon.com/gp/product/~a?ie=UTF8&tag=gigamonkeys-20&linkCode=as2&camp=1789&creative=9325&creativeASIN=~:*~a")
+
+(defparameter *amazon-image-bug* "http://www.assoc-amazon.com/e/ir?t=gigamonkeys-20&l=as2&o=1&a=~a")
+
+(defparameter *asins*
+  (progn
+    (let ((ht (make-hash-table :test #'equal)))
+      (loop for (k v) in 
+           '(("Peopleware" "0932633439")
+             ("Practical Common Lisp" "1590592395")
+             ("Rapid Development" "1556159005")
+             ("Software Estimation" "0735605351")
+             ("Software Estimation: Demystifying the Black Art" "0735605351")
+             ("The Mythical Man Month" "0201835959")
+             ("The Wisdom of Crowds" "0385503865")
+             ("Founders at Work" "1590597141")
+             ("Programmers at Work" "0914845713")
+             ("Coders at Work" "1430219483" )
+             ("Land of Lisp" "1593272006")
+             ("Beautiful Code" "0596510047")
+             ("Test Driven Development" "0321146530")
+             ("The C++ Programming Language" "0201700735")
+             ("The Design and Evolution of C++" "0201543303")
+             ("Pink Brain, Blue Brain" "0618393110"))
+           do (setf (gethash k ht) v))
+      ht)))
+
+(defun amazon-link (sexp)
+  (let* ((asin (gethash (just-text sexp) *asins*))
+         (href (format nil *amazon-link* asin)))
+    `((:a :href ,href) (:i ,@(rest sexp)))))
+
+(defun amazon-image-bug (sexp)
+  (let* ((asin (gethash (just-text sexp) *asins*))
+         (src (format nil *amazon-image-bug* asin)))
+    `(:img :src ,src :width "1" :height "1" :alt "" :style "border:none !important; margin:0px !important;")))
+
+(defun mailto-link (sexp)
+  `(:a :href ,(format nil "mailto:~a" (just-text sexp)) ,@(rest sexp)))
+
+(defparameter *tag-mappings*
+  '((:book . amazon-link)
+    (:amazon-image-bug . amazon-image-bug)
+    (:email . mailto-link)
+    (:n . (:span :class "name"))))
 
 (defun render (file &key title stylesheet)
-  (let ((sexps (parse-file file)))
-    (with-output-to-file (out (make-pathname :type "html" :defaults file))
-      (with-foo-output (out)
-        (emit-xhtml
-         (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet))))))
+  (let ((sexps (parse-file file :parse-links-p t)))
+      (with-output-to-file (out (make-pathname :type "html" :defaults file))
+        (with-foo-output (out)
+          (emit-xhtml
+           (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet))))))
 
 (defun guess-title (sexps)
   (let ((possible-h1 (second sexps)))
@@ -26,24 +69,30 @@
       (walker sexp))))
 
 (defun rewrite-sexps (sexps title stylesheet) 
-  `(:html
-     (:head
-      (:title ,title)
-      (:meta :http-equiv "Content-Type" :content "text/html; charset=UTF-8")
-      ,@(if stylesheet `((:link :rel "stylesheet" :href ,stylesheet :type "text/css")))
-     ,(remap-tags (fix-notes sexps)))))
+  (multiple-value-bind (sexps links) (extract-link-defs sexps)
+    `(:html
+       (:head
+        (:title ,title)
+        (:meta :http-equiv "Content-Type" :content "text/html; charset=UTF-8")
+        ,@(if stylesheet `((:link :rel "stylesheet" :href ,stylesheet :type "text/css")))
+        ,(fix-notes (rewrite-links (remap-tags (add-amazon-image-bugs sexps)) links))))))
 
 (defun remap-tags (sexp)
   (labels ((walker (x)
              (cond
                ((stringp x) x)
-               ((symbolp x) 
-                (let ((cons (assoc x *tag-mappings*)))
-                  (cond
-                    (cons (cdr cons))
-                    (t x))))
-               (t (mapcar #'walker x)))))
+               ((consp sexp) (remap-one-tag x #'walker)))))
     (walker sexp)))
+
+
+(defun remap-one-tag (sexp walker-fn)
+  (destructuring-bind (tag . content) sexp
+    (let ((mapper (cdr (assoc tag *tag-mappings*))))
+      (typecase mapper
+        (null `(,tag ,@(mapcar walker-fn content)))
+        (keyword `(,mapper ,@(mapcar walker-fn content)))
+        (cons `(,mapper ,@(mapcar walker-fn content)))
+        (symbol (funcall mapper sexp))))))
   
 
 (defun fix-notes (sexp)
@@ -70,6 +119,60 @@
                     (declare (ignore notetag))
                     `((:div :class "note")
                       (,ptag
-                       (:a :name ,(format nil "note_~d" num) (:a :href ,(format nil "#noteref_~d" num) (:sup ,(princ-to-string num))))
+                       (:a :name ,(format nil "note_~d" num) (:a :href ,(format nil "#noteref_~d" num) (:sup ,(princ-to-string num)))) " "
                        ,@prest)
                       ,@nrest)))))))))
+
+(defun add-amazon-image-bugs (sexp)
+  (let ((books ()))
+    (labels ((walker (x)
+               (cond
+                 ((stringp x) x)
+                 ((symbolp x) x)
+                 ((eql (car x) :book)
+                  (push (just-text x) books)
+                  x)
+                 (t `(,(car x) ,@(mapcar #'walker (cdr x)))))))
+
+      (let ((walked (walker sexp)))
+        `(,@walked ,@(mapcar (lambda (x) `(:amazon-image-bug ,x)) (nreverse books)))))))
+
+
+(defun extract-link-defs (sexp)
+  (let ((links (make-hash-table :test #'equalp))
+        (strip (gensym)))
+
+    (labels ((walker (x)
+               (cond
+                 ((stringp x) x)
+                 ((symbolp x) x)
+                 ((eql (car x) :link_def)
+                  (destructuring-bind (link url) (rest x)
+                    (setf (gethash (just-text link) links) (just-text url)))
+                  strip)
+                 (t `(,(car x) ,@(remove strip (mapcar #'walker (cdr x))))))))
+      (values (walker sexp) links))))
+
+(defun rewrite-links (sexp links)
+  (labels ((walker (x)
+             (cond
+               ((stringp x) x)
+               ((symbolp x) x)
+               ((eql (car x) :link)
+                `((:a :href ,(link-url (link-key x) links)) ,@(rest (remove-key x))))
+               (t `(,(car x) ,@(mapcar #'walker (cdr x)))))))
+    (walker sexp)))
+
+(defun link-key (link)
+  (just-text (or (find-if (lambda (x) (and (consp x) (eql (car x) :key))) link) link)))
+
+(defun remove-key (link)
+  (remove-if (lambda (x) (and (consp x) (eql (car x) :key))) link))
+
+(defun link-url (key links)
+  (or
+   (gethash key links)
+   (progn
+     (warn "No link definition for ~a" key)
+     "nowhere.html")))
+

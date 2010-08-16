@@ -16,3 +16,10 @@
         :com.gigamonkeys.markup3
         :com.gigamonkeys.utilities
         :com.gigamonkeys.foo))
+
+(defpackage :com.gigamonkeys.markup3.xml
+  (:use :common-lisp
+        :com.gigamonkeys.markup3
+        :com.gigamonkeys.utilities
+        :com.gigamonkeys.foo
+        :com.gigamonkeys.foo.xml))
