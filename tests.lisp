@@ -78,7 +78,7 @@
         (nreverse output)))))
 
 
-(defun renumber (&optional (directory ".") (spacing 1))
+(defun renumber (&optional (spacing 1))
   (flet ((file-to-list (p)
            (let ((filename (pathname-name p)))
              (multiple-value-bind (num pos) (parse-integer filename :junk-allowed t)
@@ -86,7 +86,7 @@
                    (list num p (subseq filename (1+ pos)))
                    (list most-positive-fixnum p filename))))))
 
-    (let ((tests (sort (mapcar #'file-to-list (remove-if-not #'txt-p (list-directory directory))) #'< :key #'car)))
+    (let ((tests (sort (mapcar #'file-to-list (remove-if-not #'txt-p (list-directory "."))) #'< :key #'car)))
       
       (loop with digits = (max (ceiling (log (1+ (length tests)) 10)) 2)
          for i from 1 
@@ -97,3 +97,19 @@
 (defun txt-p (p) (string= (pathname-type p) "txt"))
 
 
+(defun newtest (n &rest parser-args)
+  (apply #'test-file 
+         (make-pathname
+          :directory '(:relative "tests")
+          :name (format nil "test_~2,'0d" n)
+          :type "txt")
+         parser-args))
+
+(defun files-matching (regexp)
+  (list-directory 
+
+
+(defun xmlify ()
+    (let ((tests (remove-if-not #'txt-p (list-directory "."))))
+      (loop for test in tests
+           do (com.gigamonkeys.markup3.xml::render test))))
