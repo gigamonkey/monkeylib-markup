@@ -4,7 +4,6 @@
 
 (in-package com.gigamonkeys.markup3)
 
-(defparameter *expected-failures* ())
 (defparameter *to-skip* '())
 
 (defun test-number (txt)
@@ -77,5 +76,24 @@
            while c do (funcall translator c))
         (funcall translator :eof)
         (nreverse output)))))
+
+
+(defun renumber (&optional (directory ".") (spacing 1))
+  (flet ((file-to-list (p)
+           (let ((filename (pathname-name p)))
+             (multiple-value-bind (num pos) (parse-integer filename :junk-allowed t)
+               (if num
+                   (list num p (subseq filename (1+ pos)))
+                   (list most-positive-fixnum p filename))))))
+
+    (let ((tests (sort (mapcar #'file-to-list (remove-if-not #'txt-p (list-directory directory))) #'< :key #'car)))
+      
+      (loop with digits = (max (ceiling (log (1+ (length tests)) 10)) 2)
+         for i from 1 
+         for (num original name) in tests
+         collect (rename-file original (format nil "~v,'0d_~a.txt" digits (* i spacing) name))))))
+    
+
+(defun txt-p (p) (string= (pathname-type p) "txt"))
 
 

@@ -8,7 +8,8 @@
 (defpackage :com.gigamonkeys.markup3
   (:use :common-lisp 
         :com.gigamonkeys.macro-utilities
-        :com.gigamonkeys.utilities)
+        :com.gigamonkeys.utilities
+        :com.gigamonkeys.pathnames)
   (:export :parse-file))
 
 (defpackage :com.gigamonkeys.markup3.html
