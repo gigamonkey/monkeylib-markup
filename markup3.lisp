@@ -18,7 +18,10 @@
   ((bindings :initform () :accessor bindings)
    (elements :initform () :accessor elements)
    (current-indentation :initform 0 :accessor current-indentation)
-   (subdocument-tags :initform '(:note :comment) :accessor subdocument-tags)
+   (subdocument-tags 
+    :initarg :subdocument-tags
+    :initform '(:note :comment)
+    :accessor subdocument-tags)
    (parse-links-p :initarg :parse-links-p :initform t :accessor parse-links-p)))
 
 (defclass element ()
@@ -158,8 +161,8 @@
       (setf elements (cdr tail)))
     element))
 
-(defun parse-file (file &key (parse-links-p t))
-  (let* ((parser (make-instance 'parser :parse-links-p parse-links-p))
+(defun parse-file (file &key (parse-links-p t) (subdocument-tags '(:note :comment)))
+  (let* ((parser (make-instance 'parser :parse-links-p parse-links-p :subdocument-tags subdocument-tags))
          (translator (make-basic-translator-chain (lambda (tok) (process-token parser tok))))
          (body (open-document parser)))
     (funcall translator #\Newline)
