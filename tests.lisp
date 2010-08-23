@@ -105,9 +105,6 @@
           :type "txt")
          parser-args))
 
-(defun files-matching (regexp)
-  (list-directory 
-
 
 (defun xmlify ()
     (let ((tests (remove-if-not #'txt-p (list-directory "."))))
