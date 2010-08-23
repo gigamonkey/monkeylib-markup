@@ -53,6 +53,20 @@
           (emit-xhtml
            (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet))))))
 
+(defun render-to-stream (file out &key title stylesheet)
+  (let ((sexps (parse-file file :parse-links-p t)))
+    (with-foo-output (out)
+      (emit-xhtml
+       (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet)))))
+
+(defun render-foo (file &key (parse-links-p t) (subdocument-tags '(:note :comment)))
+  (multiple-value-bind (sexps links) (extract-link-defs (parse-file file
+                                                                    :parse-links-p parse-links-p
+                                                                    :subdocument-tags subdocument-tags))
+    (loop for x in (rest
+                    (fix-comments (fix-notes (rewrite-links (remap-tags (add-amazon-image-bugs sexps)) links))))
+       do (emit-xhtml x))))
+
 (defun guess-title (sexps)
   (let ((possible-h1 (second sexps)))
     (cond
@@ -75,7 +89,7 @@
         (:title ,title)
         (:meta :http-equiv "Content-Type" :content "text/html; charset=UTF-8")
         ,@(if stylesheet `((:link :rel "stylesheet" :href ,stylesheet :type "text/css")))
-        ,(fix-notes (rewrite-links (remap-tags (add-amazon-image-bugs sexps)) links))))))
+        ,(fix-comments (fix-notes (rewrite-links (remap-tags (add-amazon-image-bugs sexps)) links)))))))
 
 (defun remap-tags (sexp)
   (labels ((walker (x)
@@ -120,6 +134,34 @@
                     `((:div :class "note")
                       (,ptag
                        (:a :name ,(format nil "note_~d" num) (:a :href ,(format nil "#noteref_~d" num) (:sup ,(princ-to-string num)))) " "
+                       ,@prest)
+                      ,@nrest)))))))))
+
+(defun fix-comments (sexp)
+  (let ((comment-num 0)
+        (comments ()))
+
+    (labels ((walker (x)
+               (cond
+                 ((stringp x) x)
+                 ((symbolp x) x)
+                 ((eql (car x) :comment)
+                  (push x comments)
+                  (let ((num (incf comment-num)))
+                    `(:a :name ,(format nil "commentref_~d" num) (:a :href ,(format nil "#comment_~d" num) :class "comment_ref" "Comment " ,(princ-to-string num)))))
+                 (t `(,(car x) ,@(mapcar #'walker (cdr x)))))))
+
+      (let ((walked (walker sexp)))
+        `(,@walked 
+          ((:div :class "comments")
+           ,@(loop for num from 1 
+                for comment in (nreverse comments)
+                collect 
+                  (destructuring-bind (commenttag (ptag . prest) . nrest) comment
+                    (declare (ignore commenttag))
+                    `((:div :class "comment")
+                      (,ptag
+                       (:a :name ,(format nil "comment_~d" num) (:a :href ,(format nil "#commentref_~d" num) :class "comment_number" ,(princ-to-string num))) " "
                        ,@prest)
                       ,@nrest)))))))))
 
