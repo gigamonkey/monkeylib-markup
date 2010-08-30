@@ -50,13 +50,13 @@
   (let ((sexps (parse-file file :parse-links-p t)))
       (with-output-to-file (out (make-pathname :type "html" :defaults file))
         (with-foo-output (out)
-          (emit-xhtml
+          (emit-html
            (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet))))))
 
 (defun render-to-stream (file out &key title stylesheet)
   (let ((sexps (parse-file file :parse-links-p t)))
     (with-foo-output (out)
-      (emit-xhtml
+      (emit-html
        (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet)))))
 
 (defun render-foo (file &key (parse-links-p t) (subdocument-tags '(:note :comment)))
@@ -65,7 +65,7 @@
                                                                     :subdocument-tags subdocument-tags))
     (loop for x in (rest
                     (fix-comments (fix-notes (rewrite-links (remap-tags (add-amazon-image-bugs sexps)) links))))
-       do (emit-xhtml x))))
+       do (emit-html x))))
 
 (defun guess-title (sexps)
   (let ((possible-h1 (second sexps)))
