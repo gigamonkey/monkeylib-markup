@@ -7,13 +7,22 @@
 (defparameter *to-skip* '())
 
 (defun test-number (txt)
-  (parse-integer (subseq (pathname-name txt) 5)))
+  (parse-integer (first (cl-ppcre:all-matches-as-strings "[0-9]+" (pathname-name txt)))))
 
-(defun tests ()
+
+(defun test-files (dir)
+  (let ((files ()))
+    (walk-directory dir (lambda (x) 
+                          (when (cl-ppcre:scan ".*[0-9].*\\.txt" (file-namestring x))
+                            (push x files))))
+    (sort files #'< :key #'test-number)))
+
+
+(defun tests (&optional (dir "tests/"))
   (loop with passed = 0
-       with failed = 0
-       with skipped = 0
-     for file in (directory "./tests/test_*.txt")
+     with failed = 0
+     with skipped = 0
+     for file in (test-files dir)
      for n = (test-number file)
      do
        (cond
