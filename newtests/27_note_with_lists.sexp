@@ -1,0 +1,2 @@
+
+(:BODY (:P "This is a regular paragraph." (:NOTE (:P "This is an embedded note.") (:OL (:LI (:P "item 1")) (:LI (:P "item 2"))) (:P "And bullet list.") (:UL (:LI (:P "item 1")) (:LI (:P "item 2"))) (:P "Back to regular.")) " Here's the rest of the outer paragraph.")) 

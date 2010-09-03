@@ -1,0 +1,2 @@
+
+(:BODY (:P "This is a regular paragraph." (:NOTE (:P "This is an embedded note.") (:BLOCKQUOTE (:P "This is a blockquote in the note.")) (:P "Back to regular.")) " Here's the rest of the outer paragraph.")) 
