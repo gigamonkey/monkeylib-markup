@@ -11,6 +11,7 @@
    (:file "html" :depends-on ("packages"))
    (:file "xml" :depends-on ("packages")))
   :depends-on
-  (:com.gigamonkeys.macro-utilities
+  (:cl-ppcre
+   :com.gigamonkeys.macro-utilities
    :com.gigamonkeys.utilities
    :com.gigamonkeys.foo))
