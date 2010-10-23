@@ -46,8 +46,8 @@
     (:email . mailto-link)
     (:n . (:span :class "name"))))
 
-(defun render (file &key title stylesheet)
-  (let ((sexps (parse-file file :parse-links-p t)))
+(defun render (file &key title stylesheet (links t))
+  (let ((sexps (parse-file file :parse-links-p links)))
       (with-output-to-file (out (make-pathname :type "html" :defaults file))
         (with-foo-output (out)
           (emit-html
