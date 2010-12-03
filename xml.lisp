@@ -1,4 +1,4 @@
-(in-package :com.gigamonkeys.markup3.xml)
+(in-package :com.gigamonkeys.markup.xml)
 
 (define-xml-language markup-xml 
   (:block-elements :body :blockquote :ol :ul :li :link_def :note)

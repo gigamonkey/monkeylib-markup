@@ -2,8 +2,8 @@
 ;; Copyright (c) 2010, Peter Seibel. All rights reserved.
 ;;
 
-(defsystem com.gigamonkeys.markup3
-  :name "com.gigamonkeys.markup3"
+(defsystem com.gigamonkeys.markup
+  :name "com.gigamonkeys.markup"
   :components
   ((:file "packages")
    (:file "markup" :depends-on ("packages"))

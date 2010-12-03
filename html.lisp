@@ -1,4 +1,4 @@
-(in-package :com.gigamonkeys.markup3.html)
+(in-package :com.gigamonkeys.markup.html)
 
 (defparameter *amazon-link* "http://www.amazon.com/gp/product/~a?ie=UTF8&tag=gigamonkeys-20&linkCode=as2&camp=1789&creative=9325&creativeASIN=~:*~a")
 

@@ -2,7 +2,7 @@
 ;; Copyright (c) 2010, Peter Seibel. All rights reserved.
 ;;
 
-(in-package com.gigamonkeys.markup3)
+(in-package com.gigamonkeys.markup)
 
 ;;(declaim (optimize (debug 3)))
 

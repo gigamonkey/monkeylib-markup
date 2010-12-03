@@ -2,7 +2,7 @@
 ;; Copyright (c) 2010, Peter Seibel. All rights reserved.
 ;;
 
-(in-package com.gigamonkeys.markup3)
+(in-package com.gigamonkeys.markup)
 
 (defparameter *to-skip* '())
 
@@ -118,4 +118,4 @@
 (defun xmlify ()
     (let ((tests (remove-if-not #'txt-p (list-directory "."))))
       (loop for test in tests
-           do (com.gigamonkeys.markup3.xml::render test))))
+           do (com.gigamonkeys.markup.xml::render test))))
