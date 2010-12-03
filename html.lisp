@@ -46,18 +46,39 @@
     (:email . mailto-link)
     (:n . (:span :class "name"))))
 
-(defun render (file &key title stylesheet (links t))
-  (let ((sexps (parse-file file :parse-links-p links)))
-      (with-output-to-file (out (make-pathname :type "html" :defaults file))
-        (with-foo-output (out)
-          (emit-html
-           (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet))))))
+(defun render (file &key title stylesheets scripts (links t))
+  "Render `file' to an html file."
+  (with-output-to-file (out (make-pathname :type "html" :defaults file))
+    (render-to-stream
+     file out
+     :title title
+     :stylesheets stylesheets
+     :scripts scripts
+     :links links)))
 
-(defun render-to-stream (file out &key title stylesheet)
-  (let ((sexps (parse-file file :parse-links-p t)))
-    (with-foo-output (out)
-      (emit-html
-       (rewrite-sexps sexps (or title (guess-title sexps)) stylesheet)))))
+(defun render-to-stream (file out &key title stylesheets scripts (links t))
+  "Render `file' to the stream `out'."
+  (render-sexps-to-stream
+   (parse-file file :parse-links-p links) out
+   :title title
+   :stylesheets stylesheets
+   :scripts scripts))
+
+(defun render-sexps-to-stream (sexps out &key title stylesheets scripts)
+  "Render `sexps' to `out' with a header made from `title', `stylesheets', and `scripts'."
+  (with-foo-output (out)
+    (emit-html
+     `(:html
+        ,(make-head (or title (guess-title sexps)) stylesheets scripts)
+        ,(rewrite-body sexps)))))
+
+(defun make-head (title stylesheets scripts)
+  `(:head
+    (:title ,title)
+    (:meta :http-equiv "Content-Type" :content "text/html; charset=UTF-8")
+    ,@(loop for stylesheet in stylesheets collect
+           `(:link :rel "stylesheet" :href ,stylesheet :type "text/css"))
+    ,@(loop for script in scripts collect `(:script :src ,script))))
 
 (defun render-foo (file &key (parse-links-p t) (subdocument-tags '(:note :comment)))
   (multiple-value-bind (sexps links) (extract-link-defs (parse-file file
@@ -83,13 +104,16 @@
       (walker sexp))))
 
 (defun rewrite-sexps (sexps title stylesheet) 
+  `(:html
+     (:head
+      (:title ,title)
+      (:meta :http-equiv "Content-Type" :content "text/html; charset=UTF-8")
+      ,@(if stylesheet `((:link :rel "stylesheet" :href ,stylesheet :type "text/css"))))
+     ,(rewrite-body sexps)))
+
+(defun rewrite-body (sexps) 
   (multiple-value-bind (sexps links) (extract-link-defs sexps)
-    `(:html
-       (:head
-        (:title ,title)
-        (:meta :http-equiv "Content-Type" :content "text/html; charset=UTF-8")
-        ,@(if stylesheet `((:link :rel "stylesheet" :href ,stylesheet :type "text/css")))
-        ,(fix-comments (fix-notes (rewrite-links (remap-tags (add-amazon-image-bugs sexps)) links)))))))
+    (fix-comments (fix-notes (rewrite-links (remap-tags (add-amazon-image-bugs sexps)) links)))))
 
 (defun remap-tags (sexp)
   (labels ((walker (x)
@@ -97,7 +121,6 @@
                ((stringp x) x)
                ((consp sexp) (remap-one-tag x #'walker)))))
     (walker sexp)))
-
 
 (defun remap-one-tag (sexp walker-fn)
   (destructuring-bind (tag . content) sexp
@@ -107,7 +130,6 @@
         (keyword `(,mapper ,@(mapcar walker-fn content)))
         (cons `(,mapper ,@(mapcar walker-fn content)))
         (symbol (funcall mapper sexp))))))
-  
 
 (defun fix-notes (sexp)
   (let ((note-num 0)
