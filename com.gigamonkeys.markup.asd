@@ -11,4 +11,5 @@
   :depends-on
   (:cl-ppcre
    :com.gigamonkeys.macro-utilities
-   :com.gigamonkeys.utilities))
+   :com.gigamonkeys.utilities
+   :com.gigamonkeys.pathnames))

@@ -115,6 +115,7 @@
          parser-args))
 
 
+#+#:circular-dependency-on-markup-xml
 (defun xmlify ()
     (let ((tests (remove-if-not #'txt-p (list-directory "."))))
       (loop for test in tests
