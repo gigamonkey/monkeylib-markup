@@ -7,11 +7,8 @@
   :components
   ((:file "packages")
    (:file "markup" :depends-on ("packages"))
-   (:file "tests" :depends-on ("packages"))
-   (:file "html" :depends-on ("packages"))
-   (:file "xml" :depends-on ("packages")))
+   (:file "tests" :depends-on ("packages")))
   :depends-on
   (:cl-ppcre
    :com.gigamonkeys.macro-utilities
-   :com.gigamonkeys.utilities
-   :com.gigamonkeys.foo))
+   :com.gigamonkeys.utilities))
