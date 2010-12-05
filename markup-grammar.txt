@@ -34,7 +34,6 @@ such mappings.\note{One not overly convenient way to handle this, is
 to write a custom backend for a given project. Thus the semantics
 Which is fine when each project is a book.}
 
-
 Markup files consist of Unicode text encoded in UTF-8. The basic
 syntax is similar to Markdown and ReStructuredText with a bit of TeX
 thrown in for good measure. The details follow.
