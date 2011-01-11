@@ -9,4 +9,5 @@
         :com.gigamonkeys.macro-utilities
         :com.gigamonkeys.utilities
         :com.gigamonkeys.pathnames)
-  (:export :parse-file))
+  (:export :parse-file
+           :parse-text))

@@ -174,6 +174,18 @@
     (funcall translator :eof)
     (to-sexp body)))
 
+(defun parse-text (string &key (parse-links-p t) (subdocument-tags '(:note :comment)))
+  (let* ((parser (make-instance 'parser :parse-links-p parse-links-p :subdocument-tags subdocument-tags))
+         (translator (make-basic-translator-chain (lambda (tok) (process-token parser tok))))
+         (body (open-document parser)))
+    (funcall translator #\Newline)
+    (funcall translator #\Newline)
+    (loop for c across string while c do (funcall translator c))
+    (funcall translator #\Newline)
+    (funcall translator #\Newline)
+    (funcall translator :eof)
+    (to-sexp body)))
+
 (defun process-token (parser token)
   (funcall (find-binding parser token) token))
 
