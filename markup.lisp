@@ -22,6 +22,10 @@
     :initarg :subdocument-tags
     :initform '(:note :comment)
     :accessor subdocument-tags)
+   (structured-data-tags
+    :initarg :structured-data-tags
+    :initform '(:bibitem)
+    :accessor structured-data-tags)
    (parse-links-p :initarg :parse-links-p :initform t :accessor parse-links-p)))
 
 (defclass element ()
@@ -79,6 +83,9 @@
 
 (defun blank-p (token)
   (typep token 'blank-lines))
+
+(defun indentation-p (token)
+  (typep token 'indentation))
 
 (defun %indentation-compare (token spaces cmp)
   (and (typep token 'indentation) (funcall cmp (spaces token) spaces)))
@@ -161,8 +168,13 @@
       (setf elements (cdr tail)))
     element))
 
-(defun parse-file (file &key (parse-links-p t) (subdocument-tags '(:note :comment)))
-  (let* ((parser (make-instance 'parser :parse-links-p parse-links-p :subdocument-tags subdocument-tags))
+(defun parse-file (file &key (parse-links-p t) 
+                   (subdocument-tags '(:note :comment))
+                   (structured-data-tags '(:bibliography :bibitem)))
+  (let* ((parser (make-instance 'parser 
+                   :parse-links-p parse-links-p
+                   :subdocument-tags subdocument-tags
+                   :structured-data-tags structured-data-tags))
          (translator (make-basic-translator-chain (lambda (tok) (process-token parser tok))))
          (body (open-document parser)))
     (funcall translator #\Newline)
@@ -254,6 +266,16 @@
       ((or (text-char-p token) (token-is token #\\))
        (open-paragraph parser "p")
        (process-token parser token)))))
+
+(defun open-structured-data (parser tag)
+  "Parse a tag which is intended to hold structured data rather than text."
+  (let ((element (open-element parser tag)))
+    (with-bindings (parser token)
+      (#\} (pop-frame-and-element element))
+      (#\\ (open-slash-handler parser))
+      ((blank-p token))
+      (#\Newline)
+      ((indentation-p token)))))
 
 (defun open-blockquote-or-list (parser indentation)
   (let ((section (open-element parser "blockquote")))
@@ -424,9 +446,13 @@
        (unless (plusp (length name))
          (error "Empty names not allowed."))
        (pop-frame)
-       (if (find name (subdocument-tags parser) :test #'string-equal)
-           (open-subdocument parser name)
-           (open-block parser name)))
+       (cond
+         ((find name (subdocument-tags parser) :test #'string-equal)
+          (open-subdocument parser name))
+         ((find name (structured-data-tags parser) :test #'string-equal)
+          (open-structured-data parser name))
+         (t
+          (open-block parser name))))
       ((tag-name-char-p token)
        (append-text name token)))))
 
