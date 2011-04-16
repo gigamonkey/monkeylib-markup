@@ -52,14 +52,20 @@
 
 (defun test-file (txt &rest parser-args)
   (let* ((sexp (make-pathname :type "sexp" :defaults txt))
+         (text (file-text txt))
          (parsed (apply #'parse-file txt parser-args))
+         (string-parsed (apply #'parse-text text parser-args))
          (expected (get-expected sexp))
          (ok (equal parsed expected))
+         (file-vs-text-ok (equal parsed string-parsed))
          (n (test-number txt)))
     (if ok
-        (format t "~&[~d] okay." n)
+        (format t "~&[~d] Parsed to expected sexp." n)
         (format t "~&[~d] FAIL:~2&Got:~2&~s~2&Expected:~2&~s" n parsed expected))
-    ok))
+    (if file-vs-text-ok
+        (format t "~&[~d] parse-file vs parse-text okay." n)
+        (format t "~&[~d] FAIL:~2&parse-file:~2&~s~2&parse-text:~2&~s" n parsed string-parsed))
+    (and ok file-vs-text-ok)))
 
 (defun ok-file (txt)
   (with-output-to-file (out (make-pathname :type "sexp" :defaults txt))

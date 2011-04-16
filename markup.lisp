@@ -14,6 +14,12 @@
 
 (defparameter *verbatim-indentation* 3)
 
+(defparameter *default-parse-links* t)
+
+(defparameter *default-subdocument-tags* '(:note :comment))
+
+(defparameter *default-structured-data-tags* '(:bibliography :bibitem))
+
 (defclass parser ()
   ((bindings :initform () :accessor bindings)
    (elements :initform () :accessor elements)
@@ -168,33 +174,35 @@
       (setf elements (cdr tail)))
     element))
 
-(defun parse-file (file &key (parse-links-p t) 
-                   (subdocument-tags '(:note :comment))
-                   (structured-data-tags '(:bibliography :bibitem)))
+(defun parse-file (file &key
+                       (parse-links-p *default-parse-links*) 
+                       (subdocument-tags *default-subdocument-tags*)
+                       (structured-data-tags *default-structured-data-tags*))
+  (with-open-file (in file)
+    (%parse (lambda () (read-char in nil nil)) parse-links-p subdocument-tags structured-data-tags)))
+
+(defun parse-text (text &key
+                       (parse-links-p *default-parse-links*) 
+                       (subdocument-tags *default-subdocument-tags*)
+                       (structured-data-tags *default-structured-data-tags*))
+    (%parse
+     (let ((i 0) (len (length text)))
+       (lambda ()
+         (when (< i len)
+           (prog1 (char text i)
+             (incf i)))))
+     parse-links-p subdocument-tags structured-data-tags))
+  
+(defun %parse (get-char parse-links-p subdocument-tags structured-data-tags)
   (let* ((parser (make-instance 'parser 
                    :parse-links-p parse-links-p
                    :subdocument-tags subdocument-tags
                    :structured-data-tags structured-data-tags))
          (translator (make-basic-translator-chain (lambda (tok) (process-token parser tok))))
          (body (open-document parser)))
-    (funcall translator #\Newline)
-    (funcall translator #\Newline)
-    (with-open-file (in file)
-      (loop for c = (read-char in nil nil) while c do (funcall translator c)))
-    (funcall translator #\Newline)
-    (funcall translator #\Newline)
-    (funcall translator :eof)
-    (to-sexp body)))
-
-(defun parse-text (string &key (parse-links-p t) (subdocument-tags '(:note :comment)))
-  (let* ((parser (make-instance 'parser :parse-links-p parse-links-p :subdocument-tags subdocument-tags))
-         (translator (make-basic-translator-chain (lambda (tok) (process-token parser tok))))
-         (body (open-document parser)))
-    (funcall translator #\Newline)
-    (funcall translator #\Newline)
-    (loop for c across string while c do (funcall translator c))
-    (funcall translator #\Newline)
-    (funcall translator #\Newline)
+    (dotimes (i 2) (funcall translator #\Newline))
+    (loop for c = (funcall get-char) while c do (funcall translator c))
+    (dotimes (i 2) (funcall translator #\Newline))
     (funcall translator :eof)
     (to-sexp body)))
 
@@ -234,7 +242,6 @@
 (defun open-paragraph (parser tag)
   (paragraph-bindings parser (open-element parser tag)))
 
-
 (defun paragraph-bindings (parser paragraph)
   (with-bindings (parser token)
     (#\\ (open-slash-handler parser))
@@ -268,7 +275,8 @@
        (process-token parser token)))))
 
 (defun open-structured-data (parser tag)
-  "Parse a tag which is intended to hold structured data rather than text."
+  "Parse a tag which is intended to hold structured data rather than
+text. Blanks, newlines, and indentation are ignored."
   (let ((element (open-element parser tag)))
     (with-bindings (parser token)
       (#\} (pop-frame-and-element element))
