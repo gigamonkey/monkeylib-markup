@@ -160,7 +160,13 @@ paragraph:
 
 ** Links
 
-Markup can optionally support hyperlinks via a dedicated syntax: Anything in normal text enclosed in \code{[]}s is parsed as if it was enclosed in a \\link\{\} tag. If the text between the \code{[]}s contains a ‘|’ then the text before the ‘|’ is the content of the \\link\{\} element and the text after it is made the content of a \\key\{\} element that is a child of the \\link\{\} element. For instance:
+Markup can optionally support hyperlinks via a dedicated syntax:
+Anything in normal text enclosed in \code{[]}s is parsed as if it was
+enclosed in a \\link\{\} tag. If the text between the \code{[]}s
+contains a ‘|’ then the text before the ‘|’ is the content of the
+\\link\{\} element and the text after it is made the content of a
+\\key\{\} element that is a child of the \\link\{\} element. For
+instance:
 
    [foo] ==> \link{foo}
 
@@ -168,7 +174,11 @@ Markup can optionally support hyperlinks via a dedicated syntax: Anything in nor
 
    [foo\|bar] ==> \link{foo|bar}
 
-Then a file can contain link definitions which consist of some text in \code{[]}s at the beginning of a line followed by zero or more spaces followed by a URL delimited by \code{<>}s. The text in \code{[]}s is used as the key to associate the following URL with links appearing in the text using the syntax above. For example:
+Then a file can contain link definitions which consist of some text in
+\code{[]}s at the beginning of a line followed by zero or more spaces
+followed by a URL delimited by \code{<>}s. The text in \code{[]}s is
+used as the key to associate the following URL with links appearing in
+the text using the syntax above. For example:
 
    [foo] <http://www.example.com/something-about-foo.html>
 
@@ -177,13 +187,13 @@ Then a file can contain link definitions which consist of some text in \code{[]}
 ** Escapes
 
 Outside of verbatim sections, a backslash can escape \code{\\},
-\code{\{}, \code{\}}, \code{*}, \code{#}, and \code{-}, stripping them of
-their syntactic significance. The first three must be escaped whenever
-they appear outside a verbatim section as part of the text. The others
-may be escaped anytime, but it is only necessary when they would
-otherwise have syntactic significance. For example, \code{*} does not
-need to be escaped except at the beginning of a paragraph, where it
-would otherwise mark the paragraph as a header.
+\code{\{}, \code{\}}, \code{*}, \code{#}, and \code{-}, stripping them
+of their syntactic significance. The first three must be escaped
+whenever they appear outside a verbatim section as part of the text.
+The others may be escaped anytime, but it is only necessary when they
+would otherwise have syntactic significance. For example, \code{*}
+does not need to be escaped except at the beginning of a paragraph,
+where it would otherwise mark the paragraph as a header.
 
    * This is a header
 
