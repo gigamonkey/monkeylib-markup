@@ -145,11 +145,10 @@
   (with-slots (bindings) parser
     (setf bindings (acons key fn bindings))))
 
-(defun find-binding (parser token)
+(defun find-binding (token bindings)
   "Find the first binding that could handle the given token. A default
   binding can be established with the key t"
-  (with-slots (bindings) parser
-    (cdr (assoc token bindings :test #'key-match))))
+  (cdr (assoc token bindings :test #'key-match)))
 
 (defun key-match (token key)
   (etypecase key
@@ -207,14 +206,20 @@
     (to-sexp body)))
 
 (defun process-token (parser token)
-  (funcall (find-binding parser token) token))
+  (funcall (find-binding token (bindings parser)) token))
 
 (defun open-document (parser)
   (let ((body (open-element parser "body")))
     (with-bindings (parser token)
       (#\* (open-header-handler parser))
 
-      (#\- (open-possible-modeline-handler parser))
+      (#\- 
+       (open-possible-modeline-handler parser)
+       (process-token parser token))
+
+      (#\#
+       (open-possible-multiline-block-handler parser)
+       (process-token parser token))
 
       (#\[ 
        (open-possible-link-definition parser)
@@ -270,6 +275,10 @@
       ;; text-chars will shadow the open-document ones.
       (#\* (open-header-handler parser))
       
+      (#\#
+       (open-possible-multiline-block-handler parser)
+       (process-token parser token))
+
       ((or (text-char-p token) (token-is token #\\))
        (open-paragraph parser "p")
        (process-token parser token)))))
@@ -376,24 +385,76 @@ text. Blanks, newlines, and indentation are ignored."
       (t (illegal-token token)))))
 
 (defun open-possible-modeline-handler (parser)
-  (let ((so-far (make-text-buffer "-"))
-        (inital-offset 0))
+  (let ((tokens ())
+        (tokens-seen 0))
     (with-bindings (parser token)
-      ((and (token-is token #\*) (string= so-far "-"))
-       (setf inital-offset (- (offset token) 2))
-       (append-text so-far token))
-      ((and (token-is token #\-) (string= so-far "-*"))
-       (append-text so-far token))
-      ((string= so-far "-*-")
+      ((case tokens-seen
+         (0 (token-is token #\-))
+         (1 (token-is token #\*))
+         (2 (token-is token #\-)))
+       (push token tokens)
+       (incf tokens-seen))
+      ((= tokens-seen 3)
+       ;; Ignore everyting until the blank line.
        (when (blank-p token) (pop-frame)))
       (t
-       (append-text so-far token)
-       (pop-frame)
+       (push token tokens)
+       (pop-frame) ;; Pop ourself.
        (open-paragraph parser "p")
-       (loop for c across so-far
-          for o from inital-offset
-          do (process-token parser (token c o)))))))
+       (loop for token in (nreverse tokens) do (process-token parser token))))))
 
+(defun open-possible-multiline-block-handler (parser)
+  (let ((tokens ())
+        (tokens-seen 0))
+    (with-bindings (parser token)
+      ((case tokens-seen
+         (0 (token-is token #\#))
+         (1 (token-is token #\#)))
+       (push token tokens)
+       (incf tokens-seen))
+      ((and (= tokens-seen 2) (token-is token #\Space))
+       (pop-frame)
+       (open-multiline-tag-name-handler parser))
+      (t
+       (push token tokens)
+       (pop-frame) ;; Pop ourself.
+       (open-paragraph parser "p")
+       (loop for token in (nreverse tokens) do (process-token parser token))))))
+
+(defun open-multiline-tag-name-handler (parser)
+  (let ((name (make-text-buffer)))
+    (with-bindings (parser token)
+      ((tag-name-char-p token)
+       (append-text name token))
+      ((blank-p token)
+       (unless (plusp (length name))
+         (error "Empty names not allowed."))
+       (pop-frame)
+       (open-multiline-block parser name)))))
+
+(defun open-multiline-block (parser tag)
+  (let ((tokens ())
+        (tokens-seen 0))
+    (let ((element (open-element parser tag)))
+      (with-bindings (parser token)
+        ((case tokens-seen
+           (0 (token-is token #\#))
+           (1 (token-is token #\#))
+           (2 (token-is token #\.)))
+         (push token tokens)
+         (incf tokens-seen))
+        ((and (= tokens-seen 3) (blank-p token))
+         (pop-frame-and-element element))
+
+        (#\* (open-header-handler parser))
+      
+        ((or (text-char-p token) (token-is token #\\))
+         (open-paragraph parser "p")
+         (loop for token in (nreverse tokens) do (process-token parser token))
+         (process-token parser token)
+         (setf tokens () tokens-seen 0))))))
+
+  
 (defun open-possible-link-definition (parser)
   ;; This is either a paragraph starting with a link or a link
   ;; definition.

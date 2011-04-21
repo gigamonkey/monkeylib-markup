@@ -1,0 +1,2 @@
+
+(:BODY (:P "Regular paragraph.") (:FOO (:P "A first foo paragraph." (:NOTE (:P "This is a subdocument.") (:BAR (:P "With it's own multiline section.")) (:P "And some more stuff.")) " Blah") (:P "B second foo paragraph.")) (:P "Last regular paragraph.")) 

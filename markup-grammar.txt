@@ -136,8 +136,8 @@ differently than simple spans of text. The content of a
 sub-document—between the opening and closing \{\}s—is parsed like a
 document so it will contain at least one paragraph and can contain
 headers, block quotes, lists, verbatim sections, and even nested
-sub-documents. Footnotes, for example, are commonly set up to be parsed
-as sub-documents. For example:
+sub-documents. Footnotes, for example, are commonly set up to be
+parsed as sub-documents. For example:
 
    This is an example paragraph.\note{This is a footnote whose
    reference will appear right after the period before ‘paragraph’.
@@ -157,6 +157,25 @@ paragraph:
 
      This is a second paragraph in the footnote.} Back to the
      block quote paragraph.
+
+** Multiline sections
+
+Sometimes we want to semantically mark a large section of text,
+spanning multiple paragraphs. For that we can use the \i{multiline
+block} syntax:
+
+   ## tagname
+
+   contents
+
+   ##.
+
+The multiline block begins with a blank line followed by two pound
+signs, a space, and then a tag name. This line must be followed by
+another blank line, after which the contents of the multiline block
+begins. The content is parsed as normal except that a blank lne
+followed by \code{##.} and another blank line ends the multiline
+block.
 
 ** Links
 

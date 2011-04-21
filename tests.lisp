@@ -13,7 +13,7 @@
 (defun test-files (dir)
   (let ((files ()))
     (walk-directory dir (lambda (x) 
-                          (when (cl-ppcre:scan ".*[0-9].*\\.txt" (file-namestring x))
+                          (when (cl-ppcre:scan ".*[0-9].*\\.txt$" (file-namestring x))
                             (push x files))))
     (sort files #'< :key #'test-number)))
 
@@ -61,7 +61,7 @@
          (n (test-number txt)))
     (if ok
         (format t "~&[~d] Parsed to expected sexp." n)
-        (format t "~&[~d] FAIL:~2&Got:~2&~s~2&Expected:~2&~s" n parsed expected))
+        (format t "~&[~d] FAIL:~2&From:~2&~a~2&Got:~2&~s~2&Expected:~2&~s" n text parsed expected))
     (if file-vs-text-ok
         (format t "~&[~d] parse-file vs parse-text okay." n)
         (format t "~&[~d] FAIL:~2&parse-file:~2&~s~2&parse-text:~2&~s" n parsed string-parsed))
