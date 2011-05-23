@@ -213,6 +213,9 @@
     (with-bindings (parser token)
       (#\* (open-header-handler parser))
 
+      (#\§ (open-paragraph parser "section")
+           (process-token parser token))
+
       (#\- 
        (open-possible-modeline-handler parser)
        (process-token parser token))
