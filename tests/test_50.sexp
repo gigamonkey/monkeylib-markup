@@ -1,0 +1,2 @@
+
+(:BODY (:P "Testing a definition list") (:DL (:DT "Term 1") (:DD (:P "Definition 1")) (:DT "Term number two") (:DD (:P "Definition 2") (:P "With another paragraph.")) (:DT "Term 3 with a % in it") (:DD (:P "Definition 3"))) (:P "New paragraph.")) 

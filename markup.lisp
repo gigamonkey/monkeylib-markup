@@ -1,5 +1,5 @@
 ;;
-;; Copyright (c) 2010, Peter Seibel. All rights reserved.
+;; Copyright (c) 2010, 2011, Peter Seibel. All rights reserved.
 ;;
 
 (in-package com.gigamonkeys.markup)
@@ -24,7 +24,7 @@
   ((bindings :initform () :accessor bindings)
    (elements :initform () :accessor elements)
    (current-indentation :initform 0 :accessor current-indentation)
-   (subdocument-tags 
+   (subdocument-tags
     :initarg :subdocument-tags
     :initform '(:note :comment)
     :accessor subdocument-tags)
@@ -63,7 +63,7 @@
 
 ;;
 ;; Our main macro.
-;; 
+;;
 
 (defmacro with-bindings ((parser token) &body bindings)
   (with-gensyms (frame-marker)
@@ -75,8 +75,8 @@
                 (close-element ,parser element)))
          (declare (ignorable (function pop-frame) (function pop-frame-and-element)))
          ,@(loop for (key . body) in (reverse bindings) collect
-                `(push-binding 
-                  ,parser 
+                `(push-binding
+                  ,parser
                   ,(etypecase key
                               (character key)
                               (symbol key)
@@ -113,7 +113,7 @@
   `(,(tag element) ,@(loop with last = (current-child-cons element)
                         for cons on (children element)
                         for child = (car cons)
-                        collect (to-sexp 
+                        collect (to-sexp
                                  (if (and (eql cons last) (stringp child))
                                      (string-right-trim " " child)
                                      child)))))
@@ -174,14 +174,14 @@
     element))
 
 (defun parse-file (file &key
-                       (parse-links-p *default-parse-links*) 
+                       (parse-links-p *default-parse-links*)
                        (subdocument-tags *default-subdocument-tags*)
                        (structured-data-tags *default-structured-data-tags*))
   (with-open-file (in file)
     (%parse (lambda () (read-char in nil nil)) parse-links-p subdocument-tags structured-data-tags)))
 
 (defun parse-text (text &key
-                       (parse-links-p *default-parse-links*) 
+                       (parse-links-p *default-parse-links*)
                        (subdocument-tags *default-subdocument-tags*)
                        (structured-data-tags *default-structured-data-tags*))
     (%parse
@@ -191,9 +191,9 @@
            (prog1 (char text i)
              (incf i)))))
      parse-links-p subdocument-tags structured-data-tags))
-  
+
 (defun %parse (get-char parse-links-p subdocument-tags structured-data-tags)
-  (let* ((parser (make-instance 'parser 
+  (let* ((parser (make-instance 'parser
                    :parse-links-p parse-links-p
                    :subdocument-tags subdocument-tags
                    :structured-data-tags structured-data-tags))
@@ -216,7 +216,7 @@
       (#\§ (open-paragraph parser "section")
            (process-token parser token))
 
-      (#\- 
+      (#\-
        (open-possible-modeline-handler parser)
        (process-token parser token))
 
@@ -224,7 +224,7 @@
        (open-possible-multiline-block-handler parser)
        (process-token parser token))
 
-      (#\[ 
+      (#\[
        (open-possible-link-definition parser)
        (process-token parser token))
 
@@ -235,15 +235,15 @@
       ((indentation>= token (+ (current-indentation parser) *verbatim-indentation*))
        (incf (current-indentation parser) *verbatim-indentation*)
        (open-verbatim parser (- (spaces token) (current-indentation parser))))
-  
+
       ((indentation=  token (+ (current-indentation parser) *blockquote-indentation*))
        (incf (current-indentation parser) *blockquote-indentation*)
        (open-blockquote-or-list parser (spaces token)))
-  
+
       ((indentation= token (current-indentation parser)))
-    
+
       ((blank-p token))
-    
+
       (:eof (pop-frame-and-element body)))
     body))
 
@@ -269,7 +269,7 @@
     (with-bindings (parser token)
       (:eof (error "Subdocument ~a not closed." tag))
 
-      (#\} 
+      (#\}
        (setf (current-indentation parser) original-indentation)
        (pop-frame-and-element element))
 
@@ -277,7 +277,7 @@
       ;; in open-document because the open-paragraph binding for
       ;; text-chars will shadow the open-document ones.
       (#\* (open-header-handler parser))
-      
+
       (#\#
        (open-possible-multiline-block-handler parser)
        (process-token parser token))
@@ -306,6 +306,11 @@ text. Blanks, newlines, and indentation are ignored."
        (open-list parser token indentation)
        (process-token parser token))
 
+      ("%"
+       (setf (tag section) :dl)
+       (open-definition-list parser token indentation)
+       (process-token parser token))
+
       ((indentation= token (+ (- indentation *blockquote-indentation*) *verbatim-indentation*))
        ;; This is a bit of a kludge. We need to fall through to the
        ;; underlying document indentation handlers but they won't work
@@ -330,7 +335,7 @@ text. Blanks, newlines, and indentation are ignored."
 
     ((eql token list-marker)
      (with-bindings (parser token)
-       (#\Space 
+       (#\Space
         (pop-frame)
         (setf (current-indentation parser) (+ indentation 2))
         (open-list-item parser list-marker (+ indentation 2)))
@@ -348,13 +353,59 @@ text. Blanks, newlines, and indentation are ignored."
        (pop-frame-and-element item)
        (process-token parser token)))))
 
+(defun open-definition-list (parser list-marker indentation)
+  (with-bindings (parser token)
+
+    ((indentation< token indentation)
+     (setf (current-indentation parser) (spaces token))
+     (pop-frame)
+     (process-token parser token))
+
+    (#\Newline
+     (open-definition-list-definition parser  indentation))
+
+    ((eql token list-marker)
+     (with-bindings (parser token)
+       (#\Space
+        (pop-frame)
+        (setf (current-indentation parser) indentation)
+        (open-definition-list-term parser indentation))
+       (t (illegal-token token))))))
+
+(defun open-definition-list-term (parser indentation)
+  (let ((item (open-element parser "dt")))
+    ;; A DT can't contain paragraphs so we override the bindings that
+    ;; would normally create a child paragraph element.
+    (with-bindings (parser token)
+      (#\\ (open-slash-handler parser))
+      ((and (parse-links-p parser) (token-is token #\[)) (open-link parser))
+      ("%" (pop-frame-and-element item))
+      ((text-char-p token) (add-text parser token))
+
+      (#\Newline (illegal-token token "Newline in DT."))
+      ((blank-p token) (illegal-token token "Blank in DT."))
+      ((indentation< token indentation) (illegal-token token "Indentation in DT.")))))
+
+(defun open-definition-list-definition (parser indentation)
+  (let ((item (open-element parser "dd")))
+    (with-bindings (parser token)
+      ((indentation< token indentation)
+       (setf (current-indentation parser) (spaces token))
+       (pop-frame-and-element item)
+       (process-token parser token))
+
+      ("%"
+       (pop-frame-and-element item)
+       (process-token parser token)))))
+
+
 (defun open-verbatim (parser extra-indentation)
   (let ((verbatim (open-element parser "pre"))
         (blanks 0)
         (bol t))
 
     (with-bindings (parser token)
-      (#\Newline 
+      (#\Newline
        (add-text parser token)
        (setf bol t))
 
@@ -382,7 +433,7 @@ text. Blanks, newlines, and indentation are ignored."
   (let ((level 1))
     (with-bindings (parser token)
       (#\* (incf level))
-      (#\Space 
+      (#\Space
        (pop-frame)
        (open-paragraph parser (format nil "h~d" level)))
       (t (illegal-token token)))))
@@ -450,14 +501,14 @@ text. Blanks, newlines, and indentation are ignored."
          (pop-frame-and-element element))
 
         (#\* (open-header-handler parser))
-      
+
         ((or (text-char-p token) (token-is token #\\))
          (open-paragraph parser "p")
          (loop for token in (nreverse tokens) do (process-token parser token))
          (process-token parser token)
          (setf tokens () tokens-seen 0))))))
 
-  
+
 (defun open-possible-link-definition (parser)
   ;; This is either a paragraph starting with a link or a link
   ;; definition.
@@ -466,7 +517,7 @@ text. Blanks, newlines, and indentation are ignored."
     (with-bindings (parser token)
       (#\[ (open-link parser))
       (#\Space (incf spaces))
-      (#\<  
+      (#\<
        (setf (tag possible-link-def) :link_def)
        (open-url parser))
       ((or (text-char-p token) (token-is token #\\))
@@ -501,7 +552,7 @@ text. Blanks, newlines, and indentation are ignored."
       (#\> (pop-frame-and-element url))
       ((url-char-p token) (add-text parser token))
       (t (error "Illegal token in link definition ~s" token)))))
-       
+
 (defun open-slash-handler (parser)
   (with-bindings (parser token)
     ((not (tag-name-char-p token))
@@ -541,7 +592,7 @@ text. Blanks, newlines, and indentation are ignored."
 (defun tag-name-char-p (token)
   "Characters that can appear in tag names (i.e. between a '\' and a '{')."
   (let ((char (content token)))
-    (and (characterp char) 
+    (and (characterp char)
          (or (alphanumericp char)
              (find char "_.+")))))
 
@@ -564,7 +615,8 @@ text. Blanks, newlines, and indentation are ignored."
     (t (format t "~&Appending non text text: ~a" text))))
 
 
-(defun illegal-token (token) (error "Illegal token ~a" token))
+(defun illegal-token (token &optional extra)
+  (error "~Illegal token: ~a~@[ (~a)~]" token extra))
 
 ;;
 ;; Character translators -- cleans up input and generates blanks and indentations
@@ -592,7 +644,7 @@ text. Blanks, newlines, and indentation are ignored."
       (case (content token)
         (#\Return (setf after-cr t))
         (t (cond
-             (after-cr 
+             (after-cr
               (funcall next (token #\Newline (1- (offset token))))
               (unless (token-is token #\Newline) (funcall next token)))
              (t (funcall next token)))
@@ -645,7 +697,7 @@ text. Blanks, newlines, and indentation are ignored."
 
 (defun make-basic-translator-chain (end)
   (make-tokenizer
-   (make-tab-translator 
+   (make-tab-translator
     (make-eol-translator
      (make-trailing-space-translator
       (make-blank-translator

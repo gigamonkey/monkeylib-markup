@@ -1,0 +1,2 @@
+
+(:BODY (:METADATA (:DL (:DT "Title") (:DD (:P (:I "What Every Programmer Should Know about Floating-Point Arithmetic"))) (:DT "Subtitle") (:DD (:P (:I "Or, Why 0.05 + 0.05 does not equal one dime"))) (:DT "Author(s)") (:DD (:P "Peter Seibel")) (:DT "Title and Affiliation") (:DD (:P "author of " (:I "Practical Common Lisp") " and " (:I "Coders at Work"))) (:DT "Preferred Mailing Address") (:DD (:P "1641 Francisco Street, Berkeley, California 94703")) (:DT "Email Address") (:DD (:P "peter@gigamonkeys.com"))))) 
