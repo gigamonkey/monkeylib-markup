@@ -4,6 +4,7 @@
 
 (defsystem com.gigamonkeys.markup
   :name "com.gigamonkeys.markup"
+  :description "Library for parsing Markup-formatted text."
   :components
   ((:file "packages")
    (:file "markup" :depends-on ("packages"))
