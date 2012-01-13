@@ -5,8 +5,7 @@
 (in-package :cl-user)
 
 (defpackage :com.gigamonkeys.markup
-  (:use :common-lisp 
-        :com.gigamonkeys.macro-utilities
+  (:use :common-lisp
         :com.gigamonkeys.utilities
         :com.gigamonkeys.pathnames)
   (:export :parse-file
